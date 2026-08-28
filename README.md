@@ -210,6 +210,11 @@ O instalador cuida de: pacotes do sistema, virtualenv, dependências Python,
 modelo Vosk PT-BR, grupos e sudoers, serviço systemd, DNS do captive portal e
 autostart do Chromium em kiosk. Detalhes em **[INSTALACAO.md](INSTALACAO.md)**.
 
+O kiosk reduz trabalho contínuo no Raspberry Pi: usa Wayland nativo quando a
+sessão oferece esse backend, desliga serviços internos desnecessários do
+Chromium e mantém a imagem da Zee estática enquanto aguarda a wakeword. O MP4
+só é decodificado durante uma interação de voz e é pausado ao sair da Home.
+
 Depois da instalação, coloque os dois arquivos que você fornece:
 
 ```bash
@@ -220,6 +225,10 @@ sudo systemctl restart zee-assistant
 Os quatro avisos sonoros (`saudacao`, `pode-falar`, `encontrei`, `erro`) já
 acompanham o projeto em `static/assets/audio/`; troque os arquivos se quiser
 outra voz.
+
+No boot, a escuta da wakeword permanece bloqueada até `saudacao.mp3` terminar.
+A reprodução é feita pelo backend, uma única vez, e inclui a proteção contra o
+eco do alto-falante antes de o microfone começar a aceitar “Oi, Zee”.
 
 ---
 
@@ -292,6 +301,15 @@ Nenhuma constante fica espalhada pelo código. Chaves principais:
       "pode se": "podcast",
       "de pode": "de podcast"
     }
+  },
+  "slm": {
+    "enabled": true,
+    "model_path": "models/slm/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+    "context_size": 512,
+    "max_tokens": 48,                 // reduz tempo de geração no Raspberry Pi
+    "max_words": 24,                  // garantia final de resposta curta
+    "temperature": 0.2,
+    "threads": 3
   },
   "tts": {
     "enabled": true,

@@ -20,6 +20,7 @@ def app(tmp_path, resources_file):
             {
                 "app": {"resources_file": str(resources_file), "port": 5999},
                 "voice": {"enabled": False},
+                "slm": {"enabled": False},
                 "network": {"manage_wifi": False},
                 "logging": {"console": False, "file": str(tmp_path / "zee.log")},
             }
@@ -134,7 +135,20 @@ class TestVoz:
         assert app.zee_services.state.state.value == "ANSWERING"
         assert app.zee_services.state.context["answer"] == "20"
         assert speech_done.wait(1.0) is True
-        assert spoken == ["20"]
+        assert spoken == ["A resposta é 20"]
+
+    def test_prefixo_da_fala_nao_e_duplicado(self, app):
+        spoken = []
+
+        class FakeTTS:
+            def speak(self, text):
+                spoken.append(text)
+                return True
+
+        app.zee_services.voice.tts = FakeTTS()
+        app.zee_services.voice._return_home_after_answer = lambda: None
+        app.zee_services.voice._speak_answer_and_return("A resposta é vinte.")
+        assert spoken == ["A resposta é vinte."]
 
     def test_corrige_transcricao_demais_antes_do_slm(self, app, client):
         app.zee_services.matcher.phonetic_aliases["demais"] = "dez mais dez"
@@ -204,6 +218,31 @@ class TestVoz:
 
 
 class TestSons:
+    def test_motor_nao_escuta_antes_da_saudacao(self, app):
+        voice = app.zee_services.voice
+        voice.startup_ready.clear()
+        closed = []
+        voice._close_stream = lambda: closed.append(True)
+
+        voice._tick()
+
+        assert closed == [True]
+
+    def test_saudacao_libera_wakeword_somente_depois_de_terminar(self, app):
+        services = app.zee_services
+        services._startup_sound_played.clear()
+        observed = []
+
+        def play(name, blocking=True):
+            observed.append((name, blocking, services._startup_sound_played.is_set()))
+            return True
+
+        services.sounds.play = play
+        services._emit_startup_sound()
+
+        assert observed == [("startup", True, False)]
+        assert services._startup_sound_played.is_set() is True
+
     def test_lista_os_sons_no_status_da_voz(self, client):
         status = client.get("/api/voice/status").get_json()
         sons = status["sounds"]
@@ -253,6 +292,9 @@ class TestStatusEEventos:
         assert b'id="btn-list-back"' in response.data
         assert b"badge-recognizer" in response.data
         assert b"zee-circulo.mp4" in response.data
+        assert b"zee-circulo.png" in response.data
+        assert b'id="zee-static"' in response.data
+        assert b'id="zee-motion"' in response.data
         assert b"<video" in response.data
 
     def test_portal_renderiza(self, client):

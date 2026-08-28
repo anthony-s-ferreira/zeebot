@@ -58,12 +58,18 @@ class VoiceEngine:
         sounds_board: Optional[SoundBoard] = None,
         slm=None,
         tts=None,
+        startup_ready: Optional[threading.Event] = None,
     ) -> None:
         self.config = config
         self.state = state
         self.matcher = matcher
         self.slm = slm
         self.tts = tts
+        self.startup_ready = startup_ready or threading.Event()
+        if startup_ready is None:
+            # Construções isoladas do motor (testes/uso legado) não possuem o
+            # coordenador de inicialização de ZeeServices.
+            self.startup_ready.set()
 
         voice_cfg = config.section("voice")
         self.enabled = bool(voice_cfg.get("enabled", True))
@@ -250,6 +256,13 @@ class VoiceEngine:
                 self._stop.wait(2.0)
 
     def _tick(self) -> None:
+        # O único ponto que abre a escuta da wakeword fica atrás desta barreira:
+        # a saudação inicial precisa terminar primeiro.
+        if not self.startup_ready.is_set():
+            self._close_stream()
+            self._stop.wait(IDLE_SLEEP)
+            return
+
         state_snapshot = self.state.snapshot()
         if not state_snapshot["microphone"]["available"]:
             self._close_stream()
@@ -466,7 +479,11 @@ class VoiceEngine:
     def _speak_answer_and_return(self, answer: str) -> None:
         """Lê a resposta com Piper e mantém o texto visível durante a fala."""
         if self.tts is not None:
-            self.tts.speak(answer)
+            clean_answer = " ".join(str(answer or "").split()).strip()
+            speech = clean_answer
+            if not normalize(clean_answer).startswith("a resposta e"):
+                speech = f"A resposta é {clean_answer}"
+            self.tts.speak(speech)
         self._return_home_after_answer()
 
     def _return_home_after_answer(self) -> None:

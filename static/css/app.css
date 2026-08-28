@@ -194,28 +194,35 @@ button { font-family: inherit; cursor: pointer; border: 0; }
   inset: 0;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 192, 33, .38) 0%, rgba(255, 192, 33, 0) 68%);
-  animation: halo 3.4s ease-in-out infinite;
+  opacity: .55;
 }
 @keyframes halo {
   0%, 100% { transform: scale(1);    opacity: .55; }
   50%      { transform: scale(1.12); opacity: .9; }
 }
 .zee-face {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
-  animation: float 4.5s ease-in-out infinite;
   filter: drop-shadow(0 12px 18px rgba(0, 0, 0, .35));
 }
+.zee-face[hidden] { display: none; }
 @keyframes float {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-10px); }
 }
 
+body[data-state="WAKEWORD_DETECTED"] .zee-face,
+body[data-state="WAITING_USER"] .zee-face,
+body[data-state="PROCESSING_COMMAND"] .zee-face,
+body[data-state="ANSWERING"] .zee-face { animation: float 4.5s ease-in-out infinite; }
 body[data-state="WAITING_USER"] .zee-face { animation-duration: 1.6s; }
 body[data-state="WAKEWORD_DETECTED"] .zee-halo,
-body[data-state="WAITING_USER"] .zee-halo { animation-duration: 1.2s; }
+body[data-state="WAITING_USER"] .zee-halo,
+body[data-state="PROCESSING_COMMAND"] .zee-halo,
+body[data-state="ANSWERING"] .zee-halo { animation: halo 1.2s ease-in-out infinite; }
 
 .home-hint {
   margin: 0;

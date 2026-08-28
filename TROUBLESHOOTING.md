@@ -98,6 +98,25 @@ DISPLAY=:0 ./scripts/kiosk.sh          # execute manualmente e leia a saída
 Para depurar a interface, abra o DevTools remoto com um teclado: `Ctrl+Shift+I`
 (ou rode `chromium --kiosk http://127.0.0.1:5000` manualmente).
 
+### Chromium usando muita CPU
+
+Na Home o arquivo `zee-circulo.png` deve permanecer estático. O vídeo
+`zee-circulo.mp4` aparece somente entre a detecção da wakeword e o fim da
+resposta; ao abrir Menu, listagem ou conteúdo, ele é pausado. Se o vídeo ficar
+animado continuamente, force a atualização da página com `Ctrl+Shift+R`.
+
+Em uma sessão Wayland, o log do kiosk deve registrar a renderização nativa:
+
+```bash
+echo "$XDG_SESSION_TYPE"                 # esperado: wayland
+journalctl --user -u zee-kiosk -b | tail -30
+```
+
+Não acrescente `--disable-gpu`: renderização por software transfere o trabalho
+gráfico para a CPU. Para comparar o consumo antes e depois, use `htop` e
+observe os processos `chromium` primeiro na Home ociosa e depois durante uma
+interação.
+
 ---
 
 ## 4. Modelo Vosk não encontrado

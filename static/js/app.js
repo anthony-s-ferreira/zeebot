@@ -25,6 +25,8 @@
     hint: $('#home-hint'),
     transcript: $('#home-transcript'),
     answer: $('#home-answer'),
+    zeeStatic: $('#zee-static'),
+    zeeMotion: $('#zee-motion'),
     principalButton: $('#btn-principal'),
     listBackButton: $('#btn-list-back'),
     micIndicator: $('#mic-indicator'),
@@ -72,7 +74,6 @@
     sse: null,
     sseRetry: 0,
     pollTimer: null,
-    startupAudioPlayed: false,
     micActivityTimer: null,
   };
 
@@ -127,6 +128,7 @@
     if (!snapshot) return;
     store.backend = snapshot;
     el.body.dataset.state = snapshot.state;
+    syncZeeMedia(snapshot.state);
     if (snapshot.state !== 'WAITING_USER') setMicrophoneActivity(false);
     updateBadges(snapshot);
     updateHint(snapshot);
@@ -156,6 +158,36 @@
         showView('home');
         break;
     }
+  }
+
+  const ZEE_MOTION_STATES = new Set([
+    'WAKEWORD_DETECTED',
+    'WAITING_USER',
+    'PROCESSING_COMMAND',
+    'ANSWERING',
+  ]);
+
+  /** Decodifica o MP4 apenas durante uma interação de voz visível. */
+  function syncZeeMedia(state) {
+    if (!el.zeeStatic || !el.zeeMotion) return;
+    const animate = document.visibilityState !== 'hidden' && ZEE_MOTION_STATES.has(state);
+    const wasAnimating = !el.zeeMotion.hidden;
+    if (animate) {
+      if (wasAnimating) return;
+      el.zeeStatic.hidden = true;
+      el.zeeMotion.hidden = false;
+      el.zeeMotion.play().catch(() => {
+        el.zeeMotion.hidden = true;
+        el.zeeStatic.hidden = false;
+      });
+      return;
+    }
+    if (wasAnimating) {
+      el.zeeMotion.pause();
+      try { el.zeeMotion.currentTime = 0; } catch (_) { /* metadados ainda não carregados */ }
+    }
+    el.zeeMotion.hidden = true;
+    el.zeeStatic.hidden = false;
   }
 
   function setMicrophoneActivity(active, level = 0) {
@@ -670,11 +702,6 @@
     source.addEventListener('open', () => {
       store.sseRetry = 0;
       stopPolling();
-      if (!store.startupAudioPlayed) {
-        store.startupAudioPlayed = true;
-        const audio = new Audio('/static/assets/audio/saudacao.mp3');
-        audio.play().catch((error) => console.warn('[zee] saudação bloqueada pelo navegador:', error));
-      }
       console.info('[zee] conectado ao fluxo de eventos');
     });
     source.addEventListener('state', (event) => {
@@ -775,6 +802,9 @@
 
     window.addEventListener('online', () => { if (el.badgeNet) el.badgeNet.hidden = true; });
     window.addEventListener('offline', () => { if (el.badgeNet) el.badgeNet.hidden = false; });
+    document.addEventListener('visibilitychange', () => {
+      syncZeeMedia(store.backend && store.backend.state);
+    });
 
     // Teclas de apoio durante o desenvolvimento/teste.
     document.addEventListener('keydown', (event) => {

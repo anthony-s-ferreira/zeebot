@@ -47,30 +47,42 @@ done
 [ -z "${CHROMIUM}" ] && { log "ERRO: Chromium não encontrado"; exit 1; }
 log "usando ${CHROMIUM}"
 
+CHROMIUM_ARGS=(
+  --kiosk
+  --app="${URL}"
+  --user-data-dir="${PROFILE}"
+  --start-fullscreen
+  --noerrdialogs
+  --disable-infobars
+  --disable-session-crashed-bubble
+  --disable-features=Translate,TranslateUI,AutofillServerCommunication
+  --disable-translate
+  --disable-pinch
+  --overscroll-history-navigation=0
+  --autoplay-policy=no-user-gesture-required
+  --disable-background-networking
+  --disable-component-extensions-with-background-pages
+  --disable-default-apps
+  --disable-domain-reliability
+  --disable-extensions
+  --disable-sync
+  --disable-component-update
+  --password-store=basic
+  --no-first-run
+  --enable-features=OverlayScrollbar
+)
+
+# Evita a camada XWayland no Raspberry Pi OS Bookworm/labwc. Em sessões X11,
+# deixa o Chromium escolher o backend compatível para não causar tela preta.
+if [ "${XDG_SESSION_TYPE:-}" = "wayland" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; then
+  CHROMIUM_ARGS+=(--ozone-platform=wayland)
+  log "renderização nativa Wayland ativada"
+fi
+
 # Evita o balão "O Chromium não foi encerrado corretamente".
 if [ -f "${PROFILE}/Default/Preferences" ]; then
   sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/; s/"exited_cleanly":false/"exited_cleanly":true/' \
       "${PROFILE}/Default/Preferences" 2>/dev/null || true
 fi
 
-exec "${CHROMIUM}" \
-  --kiosk \
-  --app="${URL}" \
-  --user-data-dir="${PROFILE}" \
-  --start-fullscreen \
-  --noerrdialogs \
-  --disable-infobars \
-  --disable-session-crashed-bubble \
-  --disable-features=Translate,TranslateUI,AutofillServerCommunication \
-  --disable-translate \
-  --disable-pinch \
-  --overscroll-history-navigation=0 \
-  --autoplay-policy=no-user-gesture-required \
-  --check-for-update-interval=31536000 \
-  --disable-component-update \
-  --password-store=basic \
-  --no-first-run \
-  --fast \
-  --fast-start \
-  --enable-features=OverlayScrollbar \
-  "${URL}"
+exec "${CHROMIUM}" "${CHROMIUM_ARGS[@]}"

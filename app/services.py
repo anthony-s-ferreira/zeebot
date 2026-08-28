@@ -51,6 +51,7 @@ class ZeeServices:
             tail_silence=float(voice_cfg.get("sound_tail_silence_seconds", 0.4)),
         )
         self.tts = PiperTTS(self.config.section("tts"), self.player, self.state)
+        self._startup_sound_played = threading.Event()
         self.voice = VoiceEngine(
             self.config,
             self.state,
@@ -59,10 +60,11 @@ class ZeeServices:
             self.sounds,
             self.slm,
             self.tts,
+            startup_ready=self._startup_sound_played,
         )
         self.network = NetworkSupervisor(self.config, self.state)
         self._started = threading.Event()
-        self._startup_sound_played = threading.Event()
+        self._startup_thread: Optional[threading.Thread] = None
         self._warmup_thread: Optional[threading.Thread] = None
 
     # ------------------------------------------------------------------ ciclo
@@ -70,7 +72,14 @@ class ZeeServices:
         if self._started.is_set():
             return
         self._started.set()
+        self._startup_sound_played.clear()
         log.info("iniciando serviços do Zee Assistant")
+        self._startup_thread = threading.Thread(
+            target=self._play_startup_sound_when_ready,
+            daemon=True,
+            name="zee-saudacao-inicial",
+        )
+        self._startup_thread.start()
         self.voice.start()
         self.network.start()
         self._warmup_thread = threading.Thread(
@@ -86,6 +95,8 @@ class ZeeServices:
         log.info("encerrando serviços")
         self._started.clear()
         self.sounds.stop()
+        if self._startup_thread and self._startup_thread.is_alive():
+            self._startup_thread.join(timeout=2.5)
         try:
             self.voice.stop()
         finally:
@@ -131,31 +142,35 @@ class ZeeServices:
         durante a configuração de Wi-Fi, e toca certinho depois dela.
         """
         if not self.sounds.exists("startup"):
-            return
-        if self.state.state is State.HOME_LISTENING:
-            self._emit_startup_sound()
+            log.warning("saudação inicial indisponível — liberando a wakeword sem áudio")
+            self._startup_sound_played.set()
             return
 
         subscriber = self.bus.subscribe()
         try:
-            while not self._startup_sound_played.is_set():
+            while self._started.is_set() and not self._startup_sound_played.is_set():
+                if self.state.state is State.HOME_LISTENING:
+                    self._emit_startup_sound()
+                    return
                 event = subscriber.get(timeout=2.0)
                 if event is None:
-                    if self.state.state is State.HOME_LISTENING:
-                        self._emit_startup_sound()
                     continue
                 data = event.get("data") or {}
                 if event.get("type") == "state" and data.get("state") == State.HOME_LISTENING.value:
                     self._emit_startup_sound()
+                    return
         finally:
             self.bus.unsubscribe(subscriber)
 
     def _emit_startup_sound(self) -> None:
         if self._startup_sound_played.is_set():
             return
-        self._startup_sound_played.set()
         log.info("assistente pronto — tocando a saudação")
-        self.sounds.play("startup", blocking=True)
+        try:
+            self.sounds.play("startup", blocking=True)
+        finally:
+            # Só agora VoiceEngine pode abrir o microfone para a wakeword.
+            self._startup_sound_played.set()
 
     # ---------------------------------------------------------------- consulta
     def status(self) -> Dict[str, Any]:

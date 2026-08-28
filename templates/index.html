@@ -83,16 +83,22 @@
     <div class="home-center">
       <div class="zee-stage" id="zee-stage">
         <div class="zee-halo"></div>
+        <img
+          class="zee-face"
+          id="zee-static"
+          src="/static/assets/images/zee-circulo.png"
+          alt="Zee, a abelha assistente"
+        >
         <video
           class="zee-face"
-          id="zee-face"
+          id="zee-motion"
           src="/static/assets/images/zee-circulo.mp4"
-          aria-label="Zee, a abelha assistente"
-          autoplay
+          aria-hidden="true"
           loop
           muted
           playsinline
-          preload="auto"
+          preload="metadata"
+          hidden
         ></video>
       </div>
 

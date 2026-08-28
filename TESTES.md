@@ -63,7 +63,8 @@ systemctl is-active zee-assistant      # active novamente
 Observe a tela após o boot.
 
 **Esperado:** tela cheia, sem barra de endereço, abas, menus ou balão de
-"sessão restaurada"; a tela não apaga sozinha.
+"sessão restaurada"; a tela não apaga sozinha. Na espera da wakeword, a Zee
+fica estática; o MP4 anima durante a interação e volta a pausar no fim.
 **Se falhar:** `TROUBLESHOOTING.md` → "Chromium não inicia".
 
 ---

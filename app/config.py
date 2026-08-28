@@ -142,6 +142,15 @@ DEFAULTS: Dict[str, Any] = {
             "lista de alvos": "lista de audios",
         },
     },
+    "slm": {
+        "enabled": True,
+        "model_path": "models/slm/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+        "context_size": 512,
+        "max_tokens": 48,
+        "max_words": 24,
+        "temperature": 0.2,
+        "threads": 3,
+    },
     "tts": {
         "enabled": True,
         "model_path": "models/piper/pt_BR-faber-medium.onnx",
