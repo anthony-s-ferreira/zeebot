@@ -1,0 +1,19 @@
+[Unit]
+Description=Zee Assistant (Chromium em modo kiosk)
+After=graphical.target zee-assistant.service
+Wants=zee-assistant.service
+PartOf=graphical-session.target
+
+# ATENÇÃO: este serviço é OPCIONAL. Em Raspberry Pi OS com desktop, o método
+# preferido é o autostart da sessão gráfica, instalado por scripts/configure_kiosk.sh.
+# Use este unit apenas se você iniciar o Chromium por systemd --user:
+#   systemctl --user enable --now zee-kiosk.service
+
+[Service]
+Type=simple
+ExecStart=__ZEE_DIR__/scripts/kiosk.sh
+Restart=always
+RestartSec=8
+
+[Install]
+WantedBy=graphical-session.target

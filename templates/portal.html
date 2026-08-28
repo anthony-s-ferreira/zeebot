@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1430">
+  <title>Configurar {{ device_name }}</title>
+  <link rel="icon" href="/static/assets/images/zee.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/portal.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="head">
+      <div class="bee">🐝</div>
+      <h1>Configurar {{ device_name }}</h1>
+      <p class="sub">Escolha a rede Wi-Fi que o {{ device_name }} deverá utilizar.</p>
+    </header>
+
+    <section class="panel" id="panel-networks">
+      <div class="panel__head">
+        <h2>Redes disponíveis</h2>
+        <button type="button" class="link" id="btn-refresh">Atualizar</button>
+      </div>
+      <ul class="networks" id="networks" aria-live="polite">
+        <li class="loading">Procurando redes...</li>
+      </ul>
+      <button type="button" class="link link--block" id="btn-other">Outra rede... (digitar o nome)</button>
+    </section>
+
+    <section class="panel" id="panel-connect" hidden>
+      <h2 id="selected-title">Conectar</h2>
+      <form id="form-connect" autocomplete="off">
+        <label class="field" id="field-ssid" hidden>
+          <span>Nome da rede (SSID)</span>
+          <input type="text" id="input-ssid" maxlength="32" autocapitalize="none" autocorrect="off" spellcheck="false">
+        </label>
+        <label class="field" id="field-password">
+          <span>Senha</span>
+          <div class="password">
+            <input type="password" id="input-password" maxlength="63" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Senha do Wi-Fi">
+            <button type="button" class="toggle" id="btn-toggle-password" aria-label="Mostrar senha">👁</button>
+          </div>
+          <small class="hint">A senha é usada apenas para conectar e nunca é gravada em log.</small>
+        </label>
+        <div class="actions">
+          <button type="button" class="btn btn--ghost" id="btn-cancel">VOLTAR</button>
+          <button type="submit" class="btn" id="btn-connect">CONECTAR</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel panel--status" id="panel-status" hidden>
+      <div class="spinner" id="spinner"></div>
+      <h2 id="status-title">Conectando...</h2>
+      <p id="status-text"></p>
+      <p class="note" id="status-note">
+        O {{ device_name }} vai sair da rede de configuração para testar a sua rede.
+        Se der certo, a tela do dispositivo mostrará <strong>Conectado!</strong>.
+      </p>
+      <button type="button" class="btn btn--ghost" id="btn-retry" hidden>TENTAR NOVAMENTE</button>
+    </section>
+
+    <footer class="foot">
+      <p>Se esta página não abrir sozinha, acesse <strong>http://{{ ap_address }}</strong></p>
+    </footer>
+  </main>
+
+  <script src="/static/js/portal.js" defer></script>
+</body>
+</html>

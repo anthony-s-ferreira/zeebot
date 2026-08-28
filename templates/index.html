@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1b1430">
+  <title>Zee Assistant</title>
+  <link rel="icon" href="/static/assets/images/zee.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body data-state="BOOTING">
+
+  <!-- Ícones (SVG inline: sem bibliotecas gráficas) -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-video" viewBox="0 0 24 24">
+      <path d="M4 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm15 4.2 3.3-2.1a.8.8 0 0 1 1.2.7v8.4a.8.8 0 0 1-1.2.7L19 14.8Z"/>
+    </symbol>
+    <symbol id="icon-audio" viewBox="0 0 24 24">
+      <path d="M12 3a7 7 0 0 0-7 7v3H4a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a1 1 0 0 0 1-1v-6a5 5 0 0 1 10 0v6a1 1 0 0 0 1 1h2a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-1v-3a7 7 0 0 0-7-7Z"/>
+    </symbol>
+    <symbol id="icon-livro" viewBox="0 0 24 24">
+      <path d="M6 3h9a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 15h10v2H6a1 1 0 0 1 0-2Z"/>
+    </symbol>
+    <symbol id="icon-jogo" viewBox="0 0 24 24">
+      <path d="M7 7h10a5 5 0 0 1 5 5v2a4 4 0 0 1-7.2 2.4l-.6-.8H9.8l-.6.8A4 4 0 0 1 2 14v-2a5 5 0 0 1 5-5Zm-.5 3v1.5H5v1.5h1.5V15H8v-1.5h1.5V12H8v-1.5Zm9 0a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Zm2.5 2.5a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/>
+    </symbol>
+    <symbol id="icon-back" viewBox="0 0 24 24">
+      <path d="M14.7 4.3a1 1 0 0 1 0 1.4L8.4 12l6.3 6.3a1 1 0 0 1-1.4 1.4l-7-7a1 1 0 0 1 0-1.4l7-7a1 1 0 0 1 1.4 0Z"/>
+    </symbol>
+    <symbol id="icon-mic" viewBox="0 0 24 24">
+      <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3Zm7 9a1 1 0 0 1 1 1 8 8 0 0 1-7 7.94V22a1 1 0 0 1-2 0v-2.06A8 8 0 0 1 4 12a1 1 0 0 1 2 0 6 6 0 0 0 12 0 1 1 0 0 1 1-1Z"/>
+    </symbol>
+    <symbol id="icon-wifi" viewBox="0 0 24 24">
+      <path d="M12 18.5a1.75 1.75 0 1 1 0 3.5 1.75 1.75 0 0 1 0-3.5Zm0-4.8c1.5 0 2.9.6 3.9 1.6l-1.8 1.8a3 3 0 0 0-4.2 0l-1.8-1.8a5.5 5.5 0 0 1 3.9-1.6Zm0-4.5c2.7 0 5.2 1.1 7 2.9l-1.8 1.8a7.4 7.4 0 0 0-10.4 0L5 12.1a9.9 9.9 0 0 1 7-2.9Zm0-4.6c4 0 7.6 1.6 10.2 4.2l-1.8 1.8a12 12 0 0 0-16.8 0L1.8 8.8A14.4 14.4 0 0 1 12 4.6Z"/>
+    </symbol>
+  </svg>
+
+  <!-- ------------------------------------------------------- CONFIGURAÇÃO WI-FI -->
+  <section class="view view--wifi" id="view-wifi" hidden>
+    <div class="wifi-card">
+      <div class="wifi-card__text">
+        <h1 class="wifi-title">Configure o Wi-Fi do <span class="accent">Zee</span></h1>
+        <ol class="wifi-steps">
+          <li>Aponte a câmera do celular para o QR Code.</li>
+          <li>Conecte-se à rede <strong id="wifi-ssid">Zee-Setup</strong>.</li>
+          <li>A página de configuração abre sozinha.</li>
+        </ol>
+        <p class="wifi-fallback">
+          Se a página não abrir, acesse no navegador:<br>
+          <strong id="wifi-url">http://10.42.0.1</strong>
+        </p>
+        <p class="wifi-status" id="wifi-status" role="status"></p>
+      </div>
+      <div class="wifi-card__qr">
+        <div class="qr-frame">
+          <img id="wifi-qr" alt="QR Code para conectar à rede do Zee" src="/api/wifi/qrcode.svg">
+          <div class="qr-fallback" id="qr-fallback" hidden>
+            Conecte-se manualmente à rede<br><strong id="wifi-ssid-alt">Zee-Setup</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ HOME -->
+  <section class="view view--home" id="view-home" hidden>
+    <div class="home-top">
+      <div class="badges">
+        <span class="badge badge--warn" id="badge-mic" hidden>
+          <svg class="badge__icon"><use href="#icon-mic"></use></svg>
+          <span id="badge-mic-text">Microfone indisponível</span>
+        </span>
+        <span class="badge badge--warn" id="badge-net" hidden>
+          <svg class="badge__icon"><use href="#icon-wifi"></use></svg> Sem internet
+        </span>
+      </div>
+    </div>
+
+    <div class="home-center">
+      <div class="zee-stage" id="zee-stage">
+        <div class="zee-halo"></div>
+        <img class="zee-face" id="zee-face" src="/static/assets/images/zee.png" alt="Zee, a abelha assistente">
+      </div>
+
+      <p class="home-hint" id="home-hint">{{ ui.idle_hint }}</p>
+
+      <div class="mic-wave" id="mic-wave" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+
+      <p class="home-transcript" id="home-transcript"></p>
+    </div>
+
+    <div class="home-bottom">
+      <button type="button" class="btn btn--primary btn--menu" id="btn-menu">MENU</button>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ MENU -->
+  <section class="view view--menu" id="view-menu" hidden>
+    <header class="topbar">
+      <button type="button" class="btn btn--ghost btn--back" data-back="home">
+        <svg class="btn__icon"><use href="#icon-back"></use></svg> VOLTAR
+      </button>
+      <h1 class="topbar__title">Menu</h1>
+      <div class="topbar__spacer"></div>
+    </header>
+
+    <div class="menu-grid">
+      <button type="button" class="menu-card menu-card--video" data-tipo="video">
+        <svg class="menu-card__icon"><use href="#icon-video"></use></svg>
+        <span class="menu-card__label">VÍDEOS</span>
+        <span class="menu-card__count" data-count="video"></span>
+      </button>
+      <button type="button" class="menu-card menu-card--audio" data-tipo="audio">
+        <svg class="menu-card__icon"><use href="#icon-audio"></use></svg>
+        <span class="menu-card__label">ÁUDIOS</span>
+        <span class="menu-card__count" data-count="audio"></span>
+      </button>
+      <button type="button" class="menu-card menu-card--livro" data-tipo="livro">
+        <svg class="menu-card__icon"><use href="#icon-livro"></use></svg>
+        <span class="menu-card__label">LIVROS</span>
+        <span class="menu-card__count" data-count="livro"></span>
+      </button>
+      <button type="button" class="menu-card menu-card--jogo" data-tipo="jogo">
+        <svg class="menu-card__icon"><use href="#icon-jogo"></use></svg>
+        <span class="menu-card__label">JOGOS</span>
+        <span class="menu-card__count" data-count="jogo"></span>
+      </button>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------------- LISTAGEM -->
+  <section class="view view--list" id="view-list" hidden>
+    <header class="topbar">
+      <button type="button" class="btn btn--ghost btn--back" data-back="menu">
+        <svg class="btn__icon"><use href="#icon-back"></use></svg> VOLTAR
+      </button>
+      <h1 class="topbar__title" id="list-title">Conteúdos</h1>
+      <div class="topbar__spacer"></div>
+    </header>
+    <p class="list-subtitle" id="list-subtitle" hidden></p>
+    <div class="cards" id="list-cards"></div>
+    <p class="empty" id="list-empty" hidden>Nenhum conteúdo cadastrado nesta categoria.</p>
+  </section>
+
+  <!-- ---------------------------------------------------------------- CONTEÚDO -->
+  <section class="view view--resource" id="view-resource" hidden>
+    <header class="topbar topbar--compact">
+      <button type="button" class="btn btn--ghost btn--back" id="btn-resource-back">
+        <svg class="btn__icon"><use href="#icon-back"></use></svg> VOLTAR
+      </button>
+      <h1 class="topbar__title" id="resource-title">Conteúdo</h1>
+      <div class="topbar__spacer"></div>
+    </header>
+
+    <div class="resource-stage" id="resource-stage"></div>
+
+    <div class="resource-help" id="resource-help" hidden>
+      <span id="resource-help-text">Está demorando para carregar?</span>
+      <button type="button" class="btn btn--small" id="btn-resource-retry">TENTAR DE NOVO</button>
+      <button type="button" class="btn btn--small btn--ghost" data-back="list">VOLTAR</button>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------------- OVERLAY -->
+  <div class="overlay" id="overlay" hidden>
+    <div class="overlay__box">
+      <div class="overlay__emoji" id="overlay-emoji">🐝</div>
+      <p class="overlay__text" id="overlay-text"></p>
+      <button type="button" class="btn btn--small" id="overlay-close">OK</button>
+    </div>
+  </div>
+
+  <div class="splash" id="splash">
+    <div class="splash__bee">🐝</div>
+    <p>Iniciando o Zee...</p>
+  </div>
+
+  <script>
+    window.ZEE_CONFIG = {
+      version: "{{ version }}",
+      texts: {
+        idle: {{ ui.idle_hint | tojson }},
+        listening: {{ ui.listening_text | tojson }},
+        waiting: {{ ui.waiting_text | tojson }},
+        processing: {{ ui.processing_text | tojson }},
+        notFound: {{ ui.not_found_text | tojson }},
+        multiple: {{ ui.multiple_text | tojson }},
+        noMic: {{ ui.no_mic_text | tojson }}
+      }
+    };
+  </script>
+  <script src="/static/js/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# Zee Assistant — dependências Python (Raspberry Pi OS 64 bits / Python 3.9+)
+
+Flask>=3.0,<4.0            # servidor HTTP local + SSE
+Werkzeug>=3.0,<4.0         # servidor WSGI com threads (vem com o Flask)
+vosk>=0.3.45               # reconhecimento de voz offline (wheel aarch64 disponível)
+sounddevice>=0.4.6         # captura de áudio via PortAudio (requer libportaudio2)
+rapidfuzz>=3.6             # busca tolerante (fuzzy matching)
+qrcode>=7.4                # QR Code do Wi-Fi em SVG (não requer Pillow)

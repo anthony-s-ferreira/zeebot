@@ -1,0 +1,109 @@
+{
+  "app": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "resources_file": "data/recursos.json",
+    "auto_reload_resources": true,
+    "error_auto_return_seconds": 5,
+    "version": "1.0.0"
+  },
+
+  "ui": {
+    "device_name": "Zee",
+    "idle_hint": "Diga \"Oi, Zee\"",
+    "listening_text": "Oi! Estou ouvindo...",
+    "waiting_text": "Aguardando usuário...",
+    "processing_text": "Procurando conteúdo...",
+    "not_found_text": "Não encontrei esse conteúdo.",
+    "multiple_text": "Encontrei mais de uma opção.",
+    "no_mic_text": "Microfone indisponível"
+  },
+
+  "voice": {
+    "enabled": true,
+    "model_path": "models/vosk/pt-br",
+    "sample_rate": 16000,
+    "block_size": 4000,
+    "input_device": null,
+    "welcome_audio": "static/assets/audio/oi_estou_ouvindo.mp3",
+    "audio_players": [
+      ["mpg123", "-q"],
+      ["afplay"],
+      ["mpv", "--really-quiet", "--no-video"],
+      ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"],
+      ["cvlc", "--play-and-exit", "--intf", "dummy"]
+    ],
+    "audio_player_timeout_seconds": 15,
+
+    "wakeword": {
+      "phrases": ["oi zee", "oi zi", "oi zí", "oi zé", "oi ze", "oi zii", "oizee", "oizi", "ei zee", "ei zi", "olá zee", "oi zey", "oi zin", "oi zeca"],
+      "use_grammar": true,
+      "grammar_phrases": ["oi", "oi zé", "oi zi", "oi zeca", "oi zen", "ei zé", "ei zi", "olá zé", "alô zi", "opa zé"],
+      "fuzzy_threshold": 82,
+      "max_words": 4,
+      "cooldown_seconds": 2.0,
+      "phrase_threshold": 90,
+      "structural": {
+        "enabled": true,
+        "greetings": ["oi", "ei", "ai", "olá", "alô", "opa", "oe", "hei"],
+        "names": ["ze", "zi", "zey", "zin", "zeca"],
+        "greeting_threshold": 80,
+        "name_threshold": 74,
+        "min_name_length": 2,
+        "max_name_length": 4,
+        "allow_name_only": false,
+        "name_only_threshold": 90
+      }
+    },
+
+    "command": {
+      "max_record_seconds": 10,
+      "min_record_seconds": 0.8,
+      "no_speech_timeout_seconds": 5.0,
+      "silence_rms_threshold": 350,
+      "silence_duration_seconds": 1.2
+    }
+  },
+
+  "matching": {
+    "confidence_threshold": 70,
+    "ambiguity_margin": 8,
+    "max_suggestions": 4,
+    "title_weight": 0.8,
+    "description_weight": 0.2,
+    "type_bonus": 12,
+    "type_penalty": 25,
+    "synonyms": {
+      "ia": "inteligencia artificial",
+      "i a": "inteligencia artificial",
+      "abc": "abc"
+    }
+  },
+
+  "network": {
+    "manage_wifi": true,
+    "interface": "wlan0",
+    "ap_ssid_prefix": "Zee-Setup",
+    "ap_password": "",
+    "ap_connection_name": "zee-setup-ap",
+    "ap_address": "10.42.0.1",
+    "ap_prefix": 24,
+    "captive_portal_port": 80,
+    "captive_portal_fallback_port": 8080,
+    "wifi_recovery_timeout_seconds": 60,
+    "boot_wait_seconds": 45,
+    "check_interval_seconds": 10,
+    "connect_timeout_seconds": 45,
+    "connectivity_check_url": "http://connectivitycheck.gstatic.com/generate_204",
+    "connectivity_check_timeout_seconds": 5,
+    "use_sudo": true
+  },
+
+  "logging": {
+    "level": "INFO",
+    "file": "logs/zee.log",
+    "max_bytes": 1048576,
+    "backup_count": 5,
+    "console": true
+  }
+}

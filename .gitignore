@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Zee
+logs/*.log
+logs/*.log.*
+models/vosk/*/
+!models/vosk/README.md
+# (a imagem zee.png e o MP3 de saudação PODEM ser versionados — descomente
+#  as linhas abaixo se preferir mantê-los fora do repositório)
+# static/assets/audio/*.mp3
+# static/assets/images/zee.png
+
+# Sistema
+.DS_Store
+*.swp

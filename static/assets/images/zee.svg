@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Zee, a abelha">
+  <title>Zee</title>
+  <defs>
+    <radialGradient id="face" cx="42%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#ffe07a"/>
+      <stop offset="60%" stop-color="#ffc021"/>
+      <stop offset="100%" stop-color="#f0a000"/>
+    </radialGradient>
+    <linearGradient id="wing" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity=".92"/>
+      <stop offset="100%" stop-color="#cfe8ff" stop-opacity=".55"/>
+    </linearGradient>
+  </defs>
+
+  <!-- asas -->
+  <g opacity=".95">
+    <ellipse cx="46" cy="96" rx="34" ry="22" fill="url(#wing)" transform="rotate(-24 46 96)"/>
+    <ellipse cx="194" cy="96" rx="34" ry="22" fill="url(#wing)" transform="rotate(24 194 96)"/>
+  </g>
+
+  <!-- antenas -->
+  <g stroke="#3a2a10" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M92 44 C84 24 70 18 62 20"/>
+    <path d="M148 44 C156 24 170 18 178 20"/>
+  </g>
+  <circle cx="59" cy="18" r="10" fill="#3a2a10"/>
+  <circle cx="181" cy="18" r="10" fill="#3a2a10"/>
+
+  <!-- cabeça -->
+  <circle cx="120" cy="128" r="88" fill="url(#face)"/>
+  <path d="M120 40a88 88 0 0 1 84 61H36a88 88 0 0 1 84-61Z" fill="#3a2a10" opacity=".14"/>
+
+  <!-- listras -->
+  <path d="M41 156h158a88 88 0 0 1-9 22H50a88 88 0 0 1-9-22Z" fill="#3a2a10" opacity=".85"/>
+  <path d="M66 196h108a87.6 87.6 0 0 1-54 20 87.6 87.6 0 0 1-54-20Z" fill="#3a2a10" opacity=".85"/>
+
+  <!-- olhos -->
+  <g>
+    <ellipse cx="90" cy="116" rx="21" ry="24" fill="#fffdf6"/>
+    <ellipse cx="150" cy="116" rx="21" ry="24" fill="#fffdf6"/>
+    <circle cx="94" cy="120" r="11" fill="#2b2038"/>
+    <circle cx="154" cy="120" r="11" fill="#2b2038"/>
+    <circle cx="98" cy="115" r="4" fill="#fffdf6"/>
+    <circle cx="158" cy="115" r="4" fill="#fffdf6"/>
+  </g>
+
+  <!-- bochechas -->
+  <ellipse cx="66" cy="146" rx="14" ry="9" fill="#ff8f6b" opacity=".55"/>
+  <ellipse cx="174" cy="146" rx="14" ry="9" fill="#ff8f6b" opacity=".55"/>
+
+  <!-- sorriso -->
+  <path d="M100 143c6 8 34 8 40 0" fill="none" stroke="#3a2a10" stroke-width="7" stroke-linecap="round"/>
+</svg>

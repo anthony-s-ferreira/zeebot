@@ -1,0 +1,33 @@
+[Unit]
+Description=Zee Assistant (backend, voz e configuração de Wi-Fi)
+Documentation=file:///opt/zee-assistant/README.md
+After=network.target sound.target NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+User=__ZEE_USER__
+Group=__ZEE_USER__
+SupplementaryGroups=audio netdev video
+WorkingDirectory=__ZEE_DIR__
+Environment=PYTHONUNBUFFERED=1
+Environment=XDG_RUNTIME_DIR=/run/user/__ZEE_UID__
+ExecStart=__ZEE_DIR__/venv/bin/python __ZEE_DIR__/main.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+# Endurecimento compatível com nmcli/PortAudio
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+ReadWritePaths=__ZEE_DIR__
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=zee-assistant
+
+[Install]
+WantedBy=multi-user.target

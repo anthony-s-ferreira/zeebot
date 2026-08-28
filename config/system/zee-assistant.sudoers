@@ -1,0 +1,7 @@
+# Permissões mínimas para o Zee Assistant gerenciar Wi-Fi sem senha.
+# Instalado em /etc/sudoers.d/zee-assistant (modo 0440) por scripts/install.sh.
+# O placeholder __ZEE_USER__ é substituído durante a instalação.
+
+__ZEE_USER__ ALL=(root) NOPASSWD: __NMCLI__
+__ZEE_USER__ ALL=(root) NOPASSWD: __IPTABLES__
+__ZEE_USER__ ALL=(root) NOPASSWD: __RFKILL__

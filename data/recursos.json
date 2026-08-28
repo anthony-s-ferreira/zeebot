@@ -1,0 +1,51 @@
+{
+  "recursos": [
+    {
+      "id": "rec_001",
+      "tipo": "video",
+      "titulo": "Introdução à Inteligência Artificial",
+      "descricao": "Vídeo apresentando os principais conceitos de IA.",
+      "url": "https://www.youtube.com/watch?v=XXXXXXXXXXX",
+      "aliases": [
+        "introdução à ia",
+        "conceitos de inteligência artificial",
+        "aula de inteligência artificial"
+      ]
+    },
+    {
+      "id": "rec_002",
+      "tipo": "audio",
+      "titulo": "Podcast de Inteligência Artificial",
+      "descricao": "Discussão sobre aplicações práticas de IA.",
+      "url": "https://conteudos.exemplo.com/audio/inteligencia-artificial.mp3",
+      "aliases": [
+        "podcast de ia",
+        "conversa sobre inteligência artificial"
+      ]
+    },
+    {
+      "id": "rec_003",
+      "tipo": "livro",
+      "titulo": "Fundamentos de Inteligência Artificial",
+      "descricao": "Livro digital para aprofundamento do conteúdo.",
+      "url": "https://conteudos.exemplo.com/livros/fundamentos-ia.pdf",
+      "aliases": [
+        "fundamentos de ia",
+        "livro de inteligência artificial"
+      ]
+    },
+    {
+      "id": "rec_004",
+      "tipo": "jogo",
+      "titulo": "Jogo do ABC",
+      "descricao": "Jogo educacional para aprendizagem do alfabeto.",
+      "url": "https://conteudos.exemplo.com/jogos/abc.html",
+      "aliases": [
+        "jogo do alfabeto",
+        "jogo das letras",
+        "abecedário",
+        "jogo do a b c"
+      ]
+    }
+  ]
+}
