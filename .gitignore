@@ -11,6 +11,11 @@ logs/*.log
 logs/*.log.*
 models/vosk/*/
 !models/vosk/README.md
+models/slm/*.gguf
+models/whisper/*.bin
+tools/whisper.cpp/
+models/piper/*.onnx
+models/piper/*.onnx.json
 # (a imagem zee.png e o MP3 de saudação PODEM ser versionados — descomente
 #  as linhas abaixo se preferir mantê-los fora do repositório)
 # static/assets/audio/*.mp3

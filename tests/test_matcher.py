@@ -7,6 +7,7 @@ from app.voice.matcher import (
     STATUS_NOT_FOUND,
     STATUS_OPEN,
     STATUS_OPEN_LIST,
+    STATUS_OPEN_MENU,
 )
 
 
@@ -137,3 +138,88 @@ class TestConfianca:
         assert payload["status"] == STATUS_OPEN
         assert payload["resource"]["id"] == "rec_001"
         assert payload["candidates"][0]["score"] >= payload["candidates"][-1]["score"]
+
+
+class TestPedidosDeListagem:
+    """"lista de vídeos", "quais jogos existem", "mostra tudo"."""
+
+    @pytest.mark.parametrize(
+        "frase,tipo",
+        [
+            ("lista de vídeos", "video"),
+            ("mostra a lista de podcasts", "audio"),
+            ("quero ver a lista de áudios", "audio"),
+            ("lista de livros", "livro"),
+            ("lista de jogos", "jogo"),
+            ("quais jogos existem", "jogo"),
+            ("mostra todos os livros", "livro"),
+            ("quero ver todos os vídeos", "video"),
+        ],
+    )
+    def test_abre_a_listagem_do_tipo(self, matcher, frase, tipo):
+        result = matcher.search(frase)
+        assert result.status == STATUS_OPEN_LIST, result.to_dict()
+        assert result.detected_type == tipo
+
+    @pytest.mark.parametrize("frase", ["abre o menu", "mostra tudo", "quais são as opções"])
+    def test_sem_tipo_abre_o_menu(self, matcher, frase):
+        assert matcher.search(frase).status == STATUS_OPEN_MENU
+
+    def test_pedido_especifico_nao_vira_listagem(self, matcher):
+        result = matcher.search("quero assistir ao vídeo de introdução à inteligência artificial")
+        assert result.status == STATUS_OPEN
+        assert result.best.resource.id == "rec_001"
+
+
+class TestAliasesFoneticosNaBusca:
+    """O reconhecedor escreve "pode se" no lugar de "podcast"."""
+
+    def test_corrige_e_encontra_o_audio(self, matcher):
+        result = matcher.search("pode se de inteligência artificial")
+        assert result.status == STATUS_OPEN
+        assert result.best.resource.id == "rec_002"
+
+    def test_corrige_na_listagem(self, matcher):
+        result = matcher.search("mostrar lista de pode")
+        assert result.status == STATUS_OPEN_LIST
+        assert result.detected_type == "audio"
+
+    def test_frase_comum_nao_e_afetada(self, matcher):
+        """"pode ser" não pode virar "podcast"."""
+        result = matcher.search("pode ser o livro de fundamentos")
+        assert result.best.resource.id == "rec_003"
+
+
+class TestAlternativasDoReconhecedor:
+    """O Vosk devolve N transcrições; vence a que faz sentido no catálogo."""
+
+    def test_escolhe_a_alternativa_util(self, matcher):
+        result = matcher.search_best(
+            [
+                "quero uma receita de bolo",                       # não encontra nada
+                "quero ouvir o podcast de inteligência artificial",  # encontra
+            ]
+        )
+        assert result.status == STATUS_OPEN
+        assert result.best.resource.id == "rec_002"
+
+    def test_prefere_abrir_conteudo_a_abrir_listagem(self, matcher):
+        result = matcher.search_best(
+            ["lista de livros", "abra o livro fundamentos de inteligência artificial"]
+        )
+        assert result.status == STATUS_OPEN
+        assert result.best.resource.id == "rec_003"
+
+    def test_prefere_tipo_de_substantivo(self, matcher):
+        """"lista de áudio" (substantivo) vence "lista de deus" com "ver" (verbo)."""
+        result = matcher.search_best(["quero ver a lista de alguma coisa", "lista de áudio"])
+        assert result.status == STATUS_OPEN_LIST
+        assert result.detected_type == "audio"
+
+    def test_lista_vazia(self, matcher):
+        assert matcher.search_best([]).status == STATUS_NOT_FOUND
+        assert matcher.search_best(["", "  "]).status == STATUS_NOT_FOUND
+
+    def test_uma_alternativa_equivale_a_search(self, matcher):
+        frase = "quero jogar o jogo do alfabeto"
+        assert matcher.search_best([frase]).best.resource.id == matcher.search(frase).best.resource.id

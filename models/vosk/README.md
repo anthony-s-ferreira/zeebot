@@ -45,5 +45,14 @@ rm vosk-model-small-pt-0.3.zip
 
 O caminho é configurável em `config/config.json` → `voice.model_path`.
 
+O Vosk pequeno permanece responsável pela wakeword, onde uma gramática curta
+oferece baixa latência. Para frases livres, o Zee prefere o `whisper.cpp` com
+modelo `base` multilíngue quantizado e volta automaticamente ao Vosk se ele não
+estiver instalado. Instale essa parte com:
+
+```bash
+./scripts/install_whisper.sh
+```
+
 Se o modelo não existir, a aplicação registra o erro, desativa apenas a voz e
 continua funcionando pelo touchscreen.

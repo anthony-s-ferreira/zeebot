@@ -94,6 +94,7 @@ button { font-family: inherit; cursor: pointer; border: 0; }
   box-shadow: 0 6px 0 rgba(0, 0, 0, .22);
   transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
 }
+.btn[hidden] { display: none; }
 .btn:active {
   transform: translateY(4px);
   box-shadow: 0 2px 0 rgba(0, 0, 0, .22);
@@ -168,6 +169,7 @@ button { font-family: inherit; cursor: pointer; border: 0; }
   color: var(--muted-strong);
 }
 .badge--warn { background: rgba(255, 122, 89, .16); color: #ffd2c5; }
+.badge--info { background: rgba(122, 168, 255, .14); color: #d8e5ff; }
 .badge__icon { width: 1.05em; height: 1.05em; fill: currentColor; }
 
 .home-center {
@@ -233,6 +235,74 @@ body[data-state="WAITING_USER"] .zee-halo { animation-duration: 1.2s; }
   max-width: 80%;
 }
 
+.home-answer {
+  max-width: min(760px, 90vw);
+  margin: 0.75rem auto 0;
+  padding: 0.9rem 1.1rem;
+  border-left: 4px solid var(--accent, #f4b942);
+  background: rgba(255, 255, 255, 0.08);
+  font-size: clamp(1rem, 2.2vw, 1.35rem);
+  line-height: 1.45;
+  text-align: left;
+}
+
+/* Indicador explícito de captação do microfone */
+.mic-indicator {
+  --mic-level: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 7px 18px 7px 8px;
+  border-radius: 999px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .1);
+  opacity: 0;
+  transform: translateY(5px) scale(.96);
+  transition: opacity .2s ease, transform .2s ease, background .2s ease, color .2s ease;
+}
+.mic-indicator__visual {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 50%;
+  color: var(--night-900);
+  background: var(--mel-300);
+}
+.mic-indicator__ring {
+  position: absolute;
+  inset: -5px;
+  border: 2px solid var(--mel-300);
+  border-radius: 50%;
+  opacity: 0;
+}
+.mic-indicator__icon { width: 23px; height: 23px; fill: currentColor; }
+.mic-indicator__label {
+  font-size: clamp(14px, 1.8vw, 18px);
+  font-weight: 800;
+}
+body[data-state="WAITING_USER"] .mic-indicator {
+  opacity: 1;
+  transform: none;
+}
+.mic-indicator.is-speaking {
+  color: var(--mel-100);
+  background: rgba(255, 192, 33, .18);
+  box-shadow: inset 0 0 0 2px rgba(255, 216, 94, .34);
+}
+.mic-indicator.is-speaking .mic-indicator__visual {
+  transform: scale(calc(1 + var(--mic-level) * .12));
+}
+.mic-indicator.is-speaking .mic-indicator__ring { animation: mic-capture .8s ease-out infinite; }
+@keyframes mic-capture {
+  from { opacity: .8; transform: scale(.82); }
+  to   { opacity: 0; transform: scale(1.42); }
+}
+
 /* Animação do microfone ativo (barras) */
 .mic-wave {
   display: flex;
@@ -250,7 +320,8 @@ body[data-state="WAITING_USER"] .zee-halo { animation-duration: 1.2s; }
   background: linear-gradient(180deg, var(--mel-300), var(--mel-700));
 }
 body[data-state="WAITING_USER"] .mic-wave { opacity: 1; transform: none; }
-body[data-state="WAITING_USER"] .mic-wave span { animation: bars .9s ease-in-out infinite; }
+body[data-state="WAITING_USER"] .mic-wave span { height: 28%; }
+body[data-state="WAITING_USER"] .mic-indicator.is-speaking + .mic-wave span { animation: bars .9s ease-in-out infinite; }
 body[data-state="PROCESSING_COMMAND"] .mic-wave { opacity: .55; transform: none; }
 body[data-state="PROCESSING_COMMAND"] .mic-wave span { animation: bars 1.6s ease-in-out infinite; }
 .mic-wave span:nth-child(1) { animation-delay: 0s; }
@@ -263,7 +334,12 @@ body[data-state="PROCESSING_COMMAND"] .mic-wave span { animation: bars 1.6s ease
   50%      { height: 100%; }
 }
 
-.home-bottom { padding-bottom: clamp(4px, 2vh, 18px); }
+.home-bottom {
+  display: flex;
+  justify-content: center;
+  gap: clamp(10px, 2vw, 20px);
+  padding-bottom: clamp(4px, 2vh, 18px);
+}
 
 /* ------------------------------------------------------------------ MENU */
 .menu-grid {

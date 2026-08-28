@@ -98,6 +98,21 @@ class TestEventos:
         assert event["data"]["wakeword_enabled"] is False
         machine.bus.unsubscribe(subscriber)
 
+    def test_reconhecedor_de_voz_aparece_no_snapshot(self, machine):
+        machine.set_speech_recognizer("Whisper", "base-q5_1")
+        recognizer = machine.snapshot()["speech_recognizer"]
+        assert recognizer["label"] == "Whisper base-q5_1"
+        assert recognizer["available"] is True
+        assert recognizer["fallback"] is False
+
+    def test_reconhecedor_fallback_e_publicado(self, machine):
+        subscriber = machine.bus.subscribe()
+        machine.set_speech_recognizer("Vosk", "pt-br", fallback=True)
+        event = subscriber.get(timeout=1.0)
+        assert event["type"] == "capabilities"
+        assert event["data"]["speech_recognizer"]["fallback"] is True
+        machine.bus.unsubscribe(subscriber)
+
     def test_assinante_lento_nao_bloqueia(self, machine):
         subscriber = machine.bus.subscribe()
         for _ in range(200):  # muito além do tamanho da fila

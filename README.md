@@ -17,7 +17,10 @@ multimídia (vídeos, áudios, livros e jogos) carregada de um JSON local.
 * **Toque** — o botão **MENU** dá acesso a Vídeos, Áudios, Livros e Jogos.
 * **Wi-Fi** — no primeiro boot o Pi cria a rede `Zee-Setup-XXXX`, mostra um QR Code
   na tela e serve um captive portal para o celular escolher a rede da escola.
-* **Sem nuvem** — nenhum serviço externo de reconhecimento de voz é usado.
+* **SLM local** — pedidos fora do catálogo são respondidos pelo Qwen2.5 0.5B
+  quantizado, executado no Raspberry Pi sem enviar áudio ou texto para a nuvem.
+* **Sem nuvem** — o reconhecimento de voz e as respostas são locais.
+* **Resposta falada** — o Piper TTS lê as respostas em português do Brasil.
 
 Documentos complementares:
 
@@ -26,6 +29,7 @@ Documentos complementares:
 | [INSTALACAO.md](INSTALACAO.md) | Passo a passo da instalação em um Pi novo |
 | [TESTES.md](TESTES.md) | Como testar **cada** funcionalidade no Raspberry Pi |
 | [TESTES-LOCAIS.md](TESTES-LOCAIS.md) | Como testar no seu Mac, **sem** o Raspberry Pi |
+| [PROMPTS.md](PROMPTS.md) | Exemplos de pedidos para recursos e perguntas respondidas pelo SLM |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Soluções para os problemas mais comuns |
 
 ---
@@ -163,8 +167,8 @@ zee-assistant/
 │   ├── js/app.js                 # roteador, SSE, players
 │   ├── js/portal.js              # seleção de rede e senha
 │   └── assets/
-│       ├── images/zee.svg        # placeholder (troque por zee.png)
-│       └── audio/                # oi_estou_ouvindo.mp3 (você fornece)
+│       ├── images/zee-circulo.mp4 # animação principal do Zee
+│       └── audio/                # saudacao, pode-falar, encontrei, erro (.mp3)
 │
 ├── data/recursos.json            # conteúdos (editável em produção)
 ├── config/
@@ -187,7 +191,7 @@ zee-assistant/
 │   ├── zee-assistant.service     # serviço principal (Restart=always)
 │   └── zee-kiosk.service         # opcional (kiosk via systemd --user)
 │
-├── tests/                        # 203 testes (pytest)
+├── tests/                        # 275 testes (pytest)
 └── logs/zee.log                  # log rotativo
 ```
 
@@ -209,10 +213,13 @@ autostart do Chromium em kiosk. Detalhes em **[INSTALACAO.md](INSTALACAO.md)**.
 Depois da instalação, coloque os dois arquivos que você fornece:
 
 ```bash
-cp minha-abelha.png   static/assets/images/zee.png
-cp minha-saudacao.mp3 static/assets/audio/oi_estou_ouvindo.mp3
+cp minha-animacao.mp4 static/assets/images/zee-circulo.mp4
 sudo systemctl restart zee-assistant
 ```
+
+Os quatro avisos sonoros (`saudacao`, `pode-falar`, `encontrei`, `erro`) já
+acompanham o projeto em `static/assets/audio/`; troque os arquivos se quiser
+outra voz.
 
 ---
 
@@ -231,7 +238,13 @@ Nenhuma constante fica espalhada pelo código. Chaves principais:
   "voice": {
     "enabled": true,
     "model_path": "models/vosk/pt-br",
-    "welcome_audio": "static/assets/audio/oi_estou_ouvindo.mp3",
+    "sounds": {                         // avisos sonoros do assistente
+      "startup":  "static/assets/audio/saudacao.mp3",
+      "wakeword": "static/assets/audio/pode-falar.mp3",
+      "found":    "static/assets/audio/encontrei.mp3",
+      "error":    "static/assets/audio/erro.mp3"
+    },
+    "sound_tail_silence_seconds": 0.4,  // guarda contra o eco do alto-falante
     "input_device": null,               // índice ou parte do nome do microfone
     "wakeword": {
       "phrases": ["oi zee", "oi zi", "oi zí", "oi zé", "oizee", "..."],
@@ -250,17 +263,48 @@ Nenhuma constante fica espalhada pelo código. Chaves principais:
       }
     },
     "command": {
-      "max_record_seconds": 10,         // teto da gravação
-      "no_speech_timeout_seconds": 5.0, // desiste se ninguém falar
+      "max_record_seconds": 12,         // teto da gravação quando há fala
+      "no_speech_timeout_seconds": 10.0,// volta à wakeword se ninguém falar
       "silence_rms_threshold": 350,     // sensibilidade do fim de fala
-      "silence_duration_seconds": 1.2   // silêncio que encerra a captura
+      "silence_duration_seconds": 1.2,  // silêncio que encerra a captura
+      "min_speech_blocks": 2,           // ignora picos curtos de ruído
+      "max_alternatives": 5,            // N-best usado pelo fallback Vosk
+      "pre_capture_flush_blocks": 1,
+      "whisper": {                      // transcrição principal, offline
+        "enabled": true,
+        "binary": "tools/whisper.cpp/build/bin/whisper-cli",
+        "model_path": "models/whisper/ggml-base-q5_1.bin",
+        "language": "pt",
+        "threads": 3,
+        "persistent": true,            // mantém o modelo carregado entre comandos
+        "server_binary": "tools/whisper.cpp/build/bin/whisper-server",
+        "server_host": "127.0.0.1",
+        "server_port": 8178
+      }
     }
   },
   "matching": {
     "confidence_threshold": 70,         // abre automaticamente a partir daqui
     "ambiguity_margin": 8,              // scores mais próximos que isso => opções
     "max_suggestions": 4,
-    "synonyms": { "ia": "inteligencia artificial" }
+    "synonyms": { "ia": "inteligencia artificial" },
+    "phonetic_aliases": {               // conserta o que o modelo escreve errado
+      "pode se": "podcast",
+      "de pode": "de podcast"
+    }
+  },
+  "tts": {
+    "enabled": true,
+    "model_path": "models/piper/pt_BR-faber-medium.onnx",
+    "length_scale": 1.0,               // maior = fala mais devagar
+    "volume": 1.0,
+    "playback_timeout_seconds": 60
+  },
+  "warmup": {                          // aquece Qwen e Piper com a Home ociosa
+    "enabled": true,
+    "delay_seconds": 5,
+    "slm": true,
+    "tts": true
   },
   "network": {
     "manage_wifi": true,
@@ -313,7 +357,7 @@ Após editar: `sudo systemctl restart zee-assistant`.
 ```
 HOME_LISTENING ── "Oi, Zee" ──► WAKEWORD_DETECTED
                                      │ 1. para de escutar a wakeword
-                                     │ 2. toca oi_estou_ouvindo.mp3 (arquivo local)
+                                     │ 2. toca pode-falar.mp3 (arquivo local)
                                      ▼
                                WAITING_USER   "Aguardando usuário..." + animação
                                      │ grava até: silêncio de 1,2 s
@@ -326,8 +370,22 @@ HOME_LISTENING ── "Oi, Zee" ──► WAKEWORD_DETECTED
      score ≥ 70 e folga         empate (< 8)            nada ≥ 70
               ▼                      ▼                       ▼
         abre o conteúdo      "Encontrei mais de       "Não encontrei esse
-        automaticamente       uma opção." + cards      conteúdo." → Home em 5 s
+        automaticamente       uma opção." + cards      conteúdo." → Home
+          encontrei.mp3         encontrei.mp3               erro.mp3
 ```
+
+**Os quatro avisos sonoros** (arquivos locais, sem TTS — `voice.sounds`):
+
+| Momento | Arquivo | Como toca |
+|---|---|---|
+| Assistente pronto (Home apareceu) | `saudacao.mp3` | uma vez por inicialização |
+| Wakeword reconhecida | `pode-falar.mp3` | **bloqueante**: a gravação só começa depois |
+| Pedido entendido | `encontrei.mp3` | em paralelo com a abertura do conteúdo |
+| Pedido não entendido | `erro.mp3` | a volta para a Home espera o áudio terminar |
+
+Enquanto qualquer um deles toca, **a wakeword fica suspensa** — o Zee não pode
+escutar a si mesmo. Detalhes em
+[static/assets/audio/README.md](static/assets/audio/README.md).
 
 ### 6.1 Como "Oi, Zee" é reconhecido
 
@@ -383,23 +441,80 @@ venv/bin/python scripts/voice_test.py vocab             # gramática × vocabul�
 No macOS dá para validar com fala sintética, sem falar no microfone:
 `venv/bin/python scripts/dev_say_test.py` (ver [TESTES-LOCAIS.md](TESTES-LOCAIS.md)).
 
+### 6.2 Como pedir os conteúdos
+
+O comando é **palavra do tipo + assunto**, em qualquer ordem natural. Os verbos
+de comando (`abre`, `coloca`, `toca`, `bota`, `traz`, `quero`, `mostra`…) são
+ignorados na busca — servem só para soar natural.
+
+**Abrir um conteúdo específico**
+
+| Você diz | Abre |
+|---|---|
+| "quero assistir ao vídeo de introdução à inteligência artificial" | `rec_001` |
+| "abre o vídeo de introdução à inteligência artificial" | `rec_001` |
+| "coloca a aula de inteligência artificial" | `rec_001` |
+| "quero ouvir o podcast de inteligência artificial" | `rec_002` |
+| "toca o podcast de inteligência artificial" | `rec_002` |
+| "bota o áudio de inteligência artificial" | `rec_002` |
+| "abra o livro fundamentos de inteligência artificial" | `rec_003` |
+| "quero ler fundamentos de inteligência artificial" | `rec_003` |
+| "abre o pdf de fundamentos" | `rec_003` |
+| "quero jogar o jogo do alfabeto" | `rec_004` |
+| "abre o jogo das letras" | `rec_004` |
+| "bora brincar com o alfabeto" | `rec_004` |
+
+**Abrir uma listagem** (palavras de listagem: `lista`, `listagem`, `todos`,
+`todas`, `quais`, `opções`, `catálogo`, `biblioteca`, `tudo`, `menu`)
+
+| Você diz | Vai para |
+|---|---|
+| "lista de vídeos" · "quero ver todos os vídeos" | listagem de **Vídeos** |
+| "lista de podcasts" · "mostra a lista de áudios" | listagem de **Áudios** |
+| "lista de livros" · "mostra todos os livros" | listagem de **Livros** |
+| "lista de jogos" · "quais jogos existem" | listagem de **Jogos** |
+| "abre o menu" · "mostra tudo" · "quais são as opções" | **MENU** |
+
+**Palavras que definem o tipo** — substantivos (fortes) vencem verbos (fracos),
+então "mostra a lista de **podcasts**" é áudio, não vídeo:
+
+| Tipo | Substantivos (fortes) | Verbos (fracos) |
+|---|---|---|
+| **vídeo** | vídeo, vídeos, videoaula, filme, aula, documentário, youtube | assistir, ver, veja, reproduzir |
+| **áudio** | áudio, áudios, podcast, música, som, faixa, mp3, rádio, audiobook | ouvir, escutar, tocar |
+| **livro** | livro, livros, pdf, ebook, apostila, leitura, capítulo | ler, leia, estudar |
+| **jogo** | jogo, jogos, joguinho, game, brincadeira | jogar, brincar, play |
+
 **Como o comando vira uma busca** (`app/voice/matcher.py`):
 
 1. normaliza (minúsculas, sem acentos, sem pontuação, espaços colapsados);
-2. expande sinônimos (`ia` → `inteligencia artificial`);
-3. detecta o tipo por palavras-chave (`assistir/vídeo` → `video`, `ouvir/podcast` → `audio`,
-   `ler/livro/pdf` → `livro`, `jogar/jogo/brincar` → `jogo`);
-4. remove stopwords e as próprias palavras de tipo, sobrando o **assunto**;
+2. corrige o que o reconhecedor escreve errado (`matching.phonetic_aliases`:
+   `pode se` → `podcast`) e expande sinônimos (`ia` → `inteligencia artificial`);
+3. detecta o tipo por palavras-chave, com substantivos vencendo verbos, e
+   identifica pedidos de **listagem** (`lista`, `todos`, `quais`…);
+4. remove stopwords, verbos de comando e as palavras de tipo, sobrando o **assunto**;
 5. pontua cada recurso: `0,5 × RapidFuzz WRatio + 0,5 × cobertura de palavras`
    contra o título **e os apelidos** (a descrição só pode *elevar* a nota,
    nunca derrubá-la);
 6. aplica bônus/penalidade de tipo (`+12` / `−25`);
-7. decide: abrir, oferecer opções ou avisar que não encontrou.
+7. decide: abrir o conteúdo, abrir a listagem, abrir o menu, oferecer opções ou
+   avisar que não encontrou;
+8. repete tudo isso para cada **alternativa** devolvida pelo reconhecedor
+   (`voice.command.max_alternatives`, padrão 3) e fica com a que faz mais
+   sentido no catálogo — a alternativa mais provável acusticamente nem sempre é
+   a mais útil.
 
 > A cobertura de palavras evita um erro clássico: para *"abra fundamentos de
 > inteligência artificial"*, o `token_set_ratio` puro daria 100 tanto para
 > *"Fundamentos de IA"* quanto para *"Podcast de IA"*. Contando quantas palavras
 > do comando o título realmente cobre, o item certo vence com folga.
+
+> **Palavras que o modelo não conhece.** O vocabulário PT-BR do Vosk **não tem
+> "podcast"** — ele sempre transcreve "pode se" / "de pode". Siglas soletradas
+> também não existem ("ABC" vira `se`, "IA" vira `dia`). Duas saídas, ambas em
+> configuração: `matching.phonetic_aliases` conserta a transcrição, e o campo
+> `aliases` de cada recurso aceita outras formas de pedir o conteúdo. Confira o
+> que o seu modelo conhece com `venv/bin/python scripts/voice_test.py vocab`.
 
 ---
 
@@ -453,7 +568,8 @@ Pi liga ──► NetworkManager tenta os perfis salvos (até 45 s)
 | `POST` | `/api/navigation` | `{"view":"home\|menu\|list\|resource\|error\|wifi"}` |
 | `POST` | `/api/navigation/home` | Volta à Home e **reativa a wakeword** |
 | `GET` | `/api/voice/status` | Modelo, microfone, gramática, última transcrição |
-| `POST` | `/api/voice/simulate` | `{"text":"..."}` — executa o ciclo **sem microfone** |
+| `POST` | `/api/voice/simulate` | `{"text":"..."}` — executa o ciclo **sem microfone**; `{"wakeword":true}` executa o ciclo completo com o microfone |
+| `POST` | `/api/voice/sound` | `{"name":"startup\|wakeword\|found\|error"}` — testa o alto-falante |
 | `POST` | `/api/voice/match` | `{"text":"..."}` — só a busca, sem mexer no estado |
 | `GET` | `/api/wifi/status` · `/networks` | Estado da rede · redes visíveis |
 | `POST` | `/api/wifi/connect` | `{"ssid":"...","password":"..."}` |
@@ -493,14 +609,16 @@ rede — **nunca** a senha do Wi-Fi.
 
 ```bash
 venv/bin/pip install -r requirements-dev.txt
-venv/bin/python -m pytest          # 203 testes
+venv/bin/python -m pytest          # 275 testes
 ```
 
 Cobertura: parser do JSON (incluindo apelidos), conversão de URLs do YouTube,
-normalização de texto, classificação de intenção, busca fuzzy (todos os comandos
-do enunciado), níveis de confiança/ambiguidade, wakeword (26 variações aceitas e
-33 recusas, gramática e camada estrutural), regra de estados do wakeword,
-API HTTP, validação de SSID/senha e redação de segredos no log.
+normalização de texto, aliases fonéticos, classificação de intenção (tipos
+fortes/fracos e pedidos de listagem), busca fuzzy (todos os comandos do
+enunciado), escolha entre as alternativas do reconhecedor, níveis de
+confiança/ambiguidade, wakeword (26 variações aceitas e 33 recusas, gramática e
+camada estrutural), regra de estados do wakeword, API HTTP, avisos sonoros (incluindo o silenciamento da wakeword enquanto o Zee
+fala), validação de SSID/senha e redação de segredos no log.
 
 Os procedimentos manuais no Raspberry Pi (voz real, Wi-Fi, kiosk, boot) estão em
 **[TESTES.md](TESTES.md)**; para validar no seu Mac, veja

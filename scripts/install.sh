@@ -68,7 +68,7 @@ if [ "${SKIP_APT}" -eq 0 ]; then
     python3 python3-venv python3-pip python3-dev
     libportaudio2 portaudio19-dev libatlas-base-dev
     alsa-utils mpg123
-    unzip wget curl
+    unzip wget curl git cmake build-essential ffmpeg
     network-manager
   )
   sudo apt-get install -y "${PACKAGES[@]}"
@@ -113,6 +113,18 @@ elif [ -f "${ZEE_DIR}/models/vosk/pt-br/final.mdl" ] || [ -f "${ZEE_DIR}/models/
   ok "modelo já instalado em models/vosk/pt-br"
 else
   bash "${SCRIPT_DIR}/download_vosk_model.sh" || warn "falha ao baixar o modelo — a voz ficará desativada até você instalá-lo"
+fi
+
+if [ "${SKIP_MODEL}" -eq 0 ]; then
+  step "7b/12 whisper.cpp para comandos em português"
+  bash "${SCRIPT_DIR}/install_whisper.sh" \
+    || warn "whisper.cpp indisponível — os comandos continuarão usando Vosk"
+fi
+
+if [ "${SKIP_MODEL}" -eq 0 ]; then
+  step "7c/12 Piper TTS em português do Brasil"
+  bash "${SCRIPT_DIR}/install_piper.sh" \
+    || warn "Piper indisponível — as respostas continuarão somente na tela"
 fi
 
 # -----------------------------------------------------------------------------
@@ -218,7 +230,7 @@ $(echo -e "${GREEN}${BOLD}") Instalação concluída! $(echo -e "${RESET}")
   Reiniciar     : sudo systemctl restart zee-assistant
 
   Próximos passos:
-    1. Coloque a imagem oficial em static/assets/images/zee.png
+    1. Confira a animação em static/assets/images/zee-circulo.mp4
     2. Coloque o áudio em static/assets/audio/oi_estou_ouvindo.mp3
     3. Edite os conteúdos em data/recursos.json
     4. Reinicie o Raspberry Pi para validar o boot automático:  sudo reboot

@@ -25,7 +25,7 @@ venv/bin/pip install -r requirements-dev.txt
 venv/bin/python -m pytest -v
 ```
 
-**Esperado:** 203 testes passando. Eles cobrem JSON, normalização, intenção,
+**Esperado:** 275 testes passando. Eles cobrem JSON, normalização, intenção,
 busca fuzzy, wakeword, estados, API e segurança de log — sem precisar de
 microfone, rede ou tela.
 
@@ -209,9 +209,12 @@ continua funcionando**.
 
 | Momento | Tela | Áudio |
 |---|---|---|
-| Detecção | `Oi! Estou ouvindo...` | toca `oi_estou_ouvindo.mp3` |
-| Captura | `Aguardando usuário...` + barras animadas | — |
+| Inicialização | Home aparece | toca `saudacao.mp3` |
+| Detecção | `Oi! Estou ouvindo...` | toca `pode-falar.mp3` |
+| Captura | `Aguardando usuário...` + barras animadas | — (mudo) |
 | Busca | `Procurando conteúdo...` | — |
+| Entendeu | conteúdo/listagem abre | toca `encontrei.mp3` |
+| Não entendeu | `Não encontrei esse conteúdo.` | toca `erro.mp3` |
 
 ```bash
 grep -E "wakeword detectada|áudio reproduzido|transcrição" logs/zee.log | tail -5
@@ -233,6 +236,48 @@ venv/bin/python scripts/voice_test.py wake
 
 ---
 
+## T14b — Avisos sonoros
+
+```bash
+# cada som isolado, pelo alto-falante do dispositivo
+for som in startup wakeword found error; do
+  echo "== $som"
+  curl -s -X POST localhost:5000/api/voice/sound -H 'Content-Type: application/json' \
+       -d "{\"name\":\"$som\"}"
+  sleep 3
+done
+
+# o que a aplicação encontrou
+curl -s localhost:5000/api/voice/status | python3 -c "
+import json,sys
+for k,v in json.load(sys.stdin)['sounds'].items(): print(k, v['exists'], v['path'])"
+```
+
+**Esperado:** os quatro tocam e aparecem como `exists: true`.
+
+Verificações de comportamento:
+
+1. **A saudação toca uma vez** por inicialização
+   (`grep "assistente pronto" logs/zee.log`).
+2. **O Zee não escuta a si mesmo**: durante qualquer aviso,
+   `curl -s localhost:5000/api/status` mostra `"audio_playing": true` e
+   `"wakeword_enabled": false`.
+3. **O aviso de erro é aguardado**: diga algo sem sentido e confira no log que
+   `erro.mp3` termina **antes** da transição `ERROR -> HOME_LISTENING`.
+4. **Um aviso novo corta o anterior**: dispare `startup` e, 1 s depois, `found`.
+5. **Arquivo ausente não trava**: renomeie `encontrei.mp3`, faça um pedido
+   válido — o conteúdo abre e o log registra `Found not found`.
+
+Para executar o ciclo completo (som + gravação) sem falar a wakeword:
+
+```bash
+curl -X POST localhost:5000/api/voice/simulate -H 'Content-Type: application/json' \
+     -d '{"wakeword":true}'
+# toca "pode falar" e grava do microfone: fale o comando após o aviso
+```
+
+---
+
 ## T15 — Comandos de voz completos
 
 Com o serviço rodando, diga:
@@ -244,6 +289,12 @@ Com o serviço rodando, diga:
 | "Oi Zee" → "Abra o livro fundamentos de inteligência artificial" | abre `rec_003` |
 | "Oi Zee" → "Quero jogar o jogo do ABC" | abre `rec_004` |
 | "Oi Zee" → "Quero uma receita de bolo" | `Não encontrei esse conteúdo.` e volta à Home em 5 s |
+| "Oi Zee" → "Lista de vídeos" | abre a listagem de Vídeos |
+| "Oi Zee" → "Mostra a lista de podcasts" | abre a listagem de Áudios |
+| "Oi Zee" → "Quais jogos existem" | abre a listagem de Jogos |
+| "Oi Zee" → "Abre o menu" | abre o MENU |
+| "Oi Zee" → "Toca o podcast de inteligência artificial" | abre `rec_002` |
+| "Oi Zee" → "Bora brincar com o alfabeto" | abre `rec_004` |
 
 Sem falar nada após a wakeword: em ~5 s o sistema desiste e volta à Home.
 
@@ -276,6 +327,17 @@ done
 **Esperado:** os quatro primeiros com `status: open`, confiança ≥ 70 e o `id`
 correto; o último com `status: open_list` e `detected_type: video`
 (pedido genérico abre a listagem em vez de adivinhar).
+
+Pedidos de listagem e de menu:
+
+```bash
+for t in "lista de vídeos" "mostra a lista de podcasts" "quais jogos existem" "abre o menu"; do
+  curl -s -X POST localhost:5000/api/voice/match -H 'Content-Type: application/json' \
+       -d "{\"text\": \"$t\"}" \
+       | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['status'], d['detected_type'])"
+done
+# open_list video / open_list audio / open_list jogo / open_menu None
+```
 
 Para inspecionar o ranking completo:
 
@@ -413,7 +475,7 @@ executado via shell — todo `subprocess` recebe lista de argumentos.
 | Conteúdo carregado dinamicamente do JSON | T7 |
 | Vídeos / MP3 / PDFs / jogos funcionam | T8, T9, T10, T11 |
 | Wakeword funciona offline | T14 |
-| "Oi Zee" reproduz o MP3 local | T14 |
+| "Oi Zee" reproduz o MP3 local | T14, T14b |
 | Interface mostra "Aguardando usuário" | T14 |
 | Comando do usuário é reconhecido | T15 |
 | Busca fuzzy identifica o recurso | T16 |

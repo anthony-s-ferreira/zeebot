@@ -14,9 +14,9 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from ..audio import AudioPlayer, detect_microphone, probe_microphone
+from ..audio import AudioPlayer, SoundBoard, detect_microphone, probe_microphone
 from ..config import Config
 from ..state import State, StateMachine
 from .matcher import (
@@ -24,12 +24,21 @@ from .matcher import (
     STATUS_NOT_FOUND,
     STATUS_OPEN,
     STATUS_OPEN_LIST,
+    STATUS_OPEN_MENU,
     MatchResult,
     ResourceMatcher,
 )
 from .mic import MicrophoneStream, MicrophoneUnavailable
-from .recognizer import CommandRecognizer, VoiceModelError, VoskEngine, result_text
+from .recognizer import (
+    CommandRecognizer,
+    VoiceModelError,
+    VoskEngine,
+    WhisperCppTranscriber,
+    result_text,
+)
 from .wakeword import WakewordDetector
+from ..slm import SLMUnavailable
+from ..utils.text import normalize
 
 log = logging.getLogger(__name__)
 
@@ -46,25 +55,68 @@ class VoiceEngine:
         state: StateMachine,
         matcher: ResourceMatcher,
         player: Optional[AudioPlayer] = None,
+        sounds_board: Optional[SoundBoard] = None,
+        slm=None,
+        tts=None,
     ) -> None:
         self.config = config
         self.state = state
         self.matcher = matcher
+        self.slm = slm
+        self.tts = tts
 
         voice_cfg = config.section("voice")
         self.enabled = bool(voice_cfg.get("enabled", True))
         self.sample_rate = int(voice_cfg.get("sample_rate", 16000))
         self.block_size = int(voice_cfg.get("block_size", 4000))
         self.preferred_device = voice_cfg.get("input_device")
-        self.welcome_audio = Config.resolve_path(voice_cfg.get("welcome_audio"))
 
         self.player = player or AudioPlayer(
             voice_cfg.get("audio_players", []),
             float(voice_cfg.get("audio_player_timeout_seconds", 15)),
         )
+        sounds = dict(voice_cfg.get("sounds") or {})
+        # Compatibilidade com a chave antiga "welcome_audio".
+        if not sounds.get("wakeword") and voice_cfg.get("welcome_audio"):
+            sounds["wakeword"] = voice_cfg["welcome_audio"]
+        self.sounds = sounds_board or SoundBoard(
+            self.player,
+            sounds,
+            resolver=Config.resolve_path,
+            state=state,
+            tail_silence=float(voice_cfg.get("sound_tail_silence_seconds", 0.4)),
+        )
+        self.welcome_audio = self.sounds.path("wakeword")
         self.detector = WakewordDetector(voice_cfg.get("wakeword", {}))
         self.command_recognizer = CommandRecognizer(
             voice_cfg.get("command", {}), self.sample_rate
+        )
+        whisper_cfg = dict(voice_cfg.get("command", {}).get("whisper") or {})
+        whisper_binary = str(whisper_cfg.get("binary", "whisper-cli"))
+        if "/" in whisper_binary:
+            whisper_binary = str(Config.resolve_path(whisper_binary))
+        self.command_transcriber = WhisperCppTranscriber(
+            binary=whisper_binary,
+            model_path=Config.resolve_path(
+                whisper_cfg.get("model_path", "models/whisper/ggml-base-q5_1.bin")
+            ) or Path("models/whisper/ggml-base-q5_1.bin"),
+            language=str(whisper_cfg.get("language", "pt")),
+            threads=int(whisper_cfg.get("threads", 3)),
+            timeout_seconds=float(whisper_cfg.get("timeout_seconds", 30)),
+            enabled=bool(whisper_cfg.get("enabled", True)),
+            persistent=bool(whisper_cfg.get("persistent", True)),
+            server_binary=str(
+                Config.resolve_path(
+                    whisper_cfg.get(
+                        "server_binary", "tools/whisper.cpp/build/bin/whisper-server"
+                    )
+                )
+            ),
+            server_host=str(whisper_cfg.get("server_host", "127.0.0.1")),
+            server_port=int(whisper_cfg.get("server_port", 8178)),
+            server_startup_timeout=float(
+                whisper_cfg.get("server_startup_timeout_seconds", 30)
+            ),
         )
         self.engine = VoskEngine(
             Config.resolve_path(voice_cfg.get("model_path")) or Path("models/vosk/pt-br"),
@@ -94,6 +146,7 @@ class VoiceEngine:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=timeout)
         self._close_stream()
+        self.command_transcriber.stop_server()
 
     @property
     def running(self) -> bool:
@@ -128,6 +181,7 @@ class VoiceEngine:
             self._wake_recognizer = self.engine.create_recognizer(self.detector.grammar)
         if self._command_recognizer_obj is None:
             self._command_recognizer_obj = self.engine.create_recognizer(None)
+            self.command_recognizer.configure_recognizer(self._command_recognizer_obj)
 
     # --------------------------------------------------------------- microfone
     def _open_stream(self) -> bool:
@@ -154,6 +208,7 @@ class VoiceEngine:
     def _run(self) -> None:
         if not self.enabled:
             log.warning("reconhecimento de voz desativado por configuração")
+            self.state.set_speech_recognizer(None, None, available=False)
             self.state.set_model_loaded(False, "desativado na configuração")
             self.state.set_microphone(False, None)
             return
@@ -161,8 +216,21 @@ class VoiceEngine:
         has_mic = self._init_microphone()
         has_model = self._init_model()
         if not has_model:
+            self.state.set_speech_recognizer(None, None, available=False)
             log.warning("aplicação segue funcionando apenas pelo touchscreen")
             return
+        if self.command_transcriber.available:
+            whisper_model = self.command_transcriber.model_path.stem.removeprefix("ggml-")
+            self.state.set_speech_recognizer("Whisper", whisper_model)
+            log.info("comandos serão transcritos pelo whisper.cpp")
+            self.command_transcriber.start_server(blocking=False)
+        else:
+            self.state.set_speech_recognizer(
+                "Vosk", self.engine.model_path.name, fallback=True
+            )
+            log.warning(
+                "whisper.cpp ou modelo indisponível; comandos usarão o fallback Vosk"
+            )
         if has_mic:
             try:
                 self._ensure_recognizers()
@@ -219,11 +287,13 @@ class VoiceEngine:
         detected = False
         if self._wake_recognizer.AcceptWaveform(data):
             text = result_text(self._wake_recognizer.Result())
+            if text:
+                log.info("fala entendida (wakeword): %r", text)
             detected = self.detector.matches(text)
         else:
             partial = result_text(self._wake_recognizer.PartialResult())
             if partial:
-                detected = self.detector.matches(partial)
+                log.debug("fala parcial (wakeword): %r", partial)
 
         if detected:
             self._wake_recognizer.Reset()
@@ -240,35 +310,70 @@ class VoiceEngine:
             self.state.set_state(State.WAKEWORD_DETECTED, reason="wakeword")
             self._close_stream()
 
-            # Passo 2: MP3 local obrigatório (sem TTS).
-            self.player.play(self.welcome_audio)
+            # Passo 2: o aviso termina antes de abrir o microfone. Isso impede
+            # que o alto-falante do próprio Zee contamine a transcrição.
+            self.sounds.play("wakeword", blocking=True)
 
-            # Passo 3: interface muda para "Aguardando usuário...".
-            self.state.set_state(State.WAITING_USER, reason="captura de comando")
-
-            # Passo 4/5: captura + transcrição local.
+            # Passo 3: abre o microfone somente depois do aviso curto.
             text = ""
             metrics: Dict[str, Any] = {}
             if self._open_stream():
-                self._stream.flush(1)
+                flush_blocks = int(
+                    self.config.get("voice.command.pre_capture_flush_blocks", 1)
+                )
+                self._stream.flush(flush_blocks)
+                self.state.set_state(State.WAITING_USER, reason="captura de comando")
                 try:
                     self._ensure_recognizers()
                     text, metrics = self.command_recognizer.capture(
-                        self._stream, self._command_recognizer_obj
+                        self._stream,
+                        self._command_recognizer_obj,
+                        self._publish_microphone_activity,
+                        self.command_transcriber if self.command_transcriber.available else None,
                     )
                 except MicrophoneUnavailable as exc:
                     log.error("captura abortada: %s", exc)
                 finally:
+                    self._publish_microphone_activity(0, False)
                     self._close_stream()
+            else:
+                log.warning("não foi possível abrir o microfone após o aviso")
             self.last_transcript = text
+            log.info(
+                "fala entendida (comando): %r | alternativas=%s",
+                text,
+                metrics.get("hypotheses", []),
+            )
             self.state.publish("transcript", {"text": text, "metrics": metrics})
 
+            if not metrics.get("speech_detected", False):
+                self._return_to_wakeword_after_silence()
+                return
+
             # Passos 6/7/8: interpretar, buscar e abrir.
-            self.handle_transcript(text)
+            self.handle_transcript(text, metrics.get("hypotheses"))
         finally:
             self._busy.release()
 
-    def handle_transcript(self, text: str) -> MatchResult:
+    def _return_to_wakeword_after_silence(self) -> None:
+        """Sem fala confirmada, volta à escuta da wakeword sem gerar comando."""
+        log.info("nenhuma fala confirmada — retornando à espera da wakeword")
+        self.state.block_wakeword_for(0.5)
+        self.state.set_state(State.HOME_LISTENING, reason="tempo de fala esgotado")
+        self.state.publish("action", {"action": "go_home", "reason": "no_speech"})
+
+    def _publish_microphone_activity(self, rms_level: float, active: bool) -> None:
+        """Envia à tela um nível leve e normalizado durante a captura do comando."""
+        threshold = max(1.0, self.command_recognizer.silence_threshold)
+        level = min(1.0, max(0.0, float(rms_level) / (threshold * 3.0)))
+        self.state.publish(
+            "microphone_activity",
+            {"active": bool(active), "level": round(level, 2)},
+        )
+
+    def handle_transcript(
+        self, text: str, hypotheses: Optional[List[str]] = None
+    ) -> MatchResult:
         """Interpreta a transcrição e leva o sistema ao estado resultante."""
         self.state.set_state(
             State.PROCESSING_COMMAND, {"transcript": text}, reason="busca de conteúdo"
@@ -277,10 +382,14 @@ class VoiceEngine:
             self._finish_not_found("Não entendi. Pode repetir?", text)
             return MatchResult(text, "", None, STATUS_NOT_FOUND, [])
 
-        result = self.matcher.search(text)
+        candidatas = list(hypotheses or [])
+        if text not in candidatas:
+            candidatas.insert(0, text)
+        result = self.matcher.search_best(candidatas)
         payload = result.to_dict(self.matcher.max_suggestions)
 
         if result.status == STATUS_OPEN and result.best is not None:
+            self.sounds.play("found", blocking=False)
             resource = result.best.resource
             self.state.set_state(
                 State.RESOURCE_VIEW,
@@ -292,16 +401,26 @@ class VoiceEngine:
                 {"action": "open_resource", "resource_id": resource.id, "match": payload},
             )
         elif result.status == STATUS_MULTIPLE:
+            self.sounds.play("found", blocking=False)
             self.state.set_state(
                 State.RESOURCE_LIST,
-                {"source": "voz", "mode": "options"},
+                {"source": "voz", "mode": "options", "return_to": "home"},
                 reason="múltiplas opções",
             )
             self.state.publish("action", {"action": "show_options", "match": payload})
+        elif result.status == STATUS_OPEN_MENU:
+            self.sounds.play("found", blocking=False)
+            self.state.set_state(State.MENU, {"source": "voz"}, reason="menu por voz")
+            self.state.publish("action", {"action": "open_menu", "match": payload})
         elif result.status == STATUS_OPEN_LIST:
+            self.sounds.play("found", blocking=False)
             self.state.set_state(
                 State.RESOURCE_LIST,
-                {"tipo": result.detected_type, "source": "voz"},
+                {
+                    "tipo": result.detected_type,
+                    "source": "voz",
+                    "return_to": "home",
+                },
                 reason=f"listagem {result.detected_type}",
             )
             self.state.publish(
@@ -309,10 +428,55 @@ class VoiceEngine:
                 {"action": "open_list", "tipo": result.detected_type, "match": payload},
             )
         else:
+            self._answer_with_slm_or_not_found(text, payload)
+        return result
+
+    def _answer_with_slm_or_not_found(self, text: str, payload: Dict[str, Any]) -> None:
+        if self.slm is None:
             self._finish_not_found(
                 self.config.get("ui.not_found_text", "Não encontrei esse conteúdo."), text, payload
             )
-        return result
+            return
+        try:
+            corrected = self.matcher.corrected_query(text)
+            prompt = text
+            if corrected != normalize(text):
+                prompt = corrected
+                log.info("correção fonética: %r -> %r", text, prompt)
+            answer = self.slm.answer(prompt)
+        except SLMUnavailable as exc:
+            log.warning("SLM indisponível; mantendo fallback de conteúdo: %s", exc)
+            self._finish_not_found(
+                self.config.get("ui.not_found_text", "Não encontrei esse conteúdo."), text, payload
+            )
+            return
+        self.state.set_state(
+            State.ANSWERING, {"answer": answer, "transcript": text}, reason="resposta do SLM"
+        )
+        self.state.publish(
+            "action", {"action": "show_answer", "answer": answer, "transcript": text}
+        )
+        threading.Thread(
+            target=self._speak_answer_and_return,
+            args=(answer,),
+            daemon=True,
+            name="zee-resposta-retorno",
+        ).start()
+
+    def _speak_answer_and_return(self, answer: str) -> None:
+        """Lê a resposta com Piper e mantém o texto visível durante a fala."""
+        if self.tts is not None:
+            self.tts.speak(answer)
+        self._return_home_after_answer()
+
+    def _return_home_after_answer(self) -> None:
+        delay = float(self.config.get("app.answer_auto_return_seconds", 5))
+        if delay > 0:
+            time.sleep(delay)
+        if self.state.state is State.ANSWERING:
+            self.state.block_wakeword_for(0.5)
+            self.state.set_state(State.HOME_LISTENING, reason="retorno após resposta")
+            self.state.publish("action", {"action": "go_home"})
 
     def _finish_not_found(
         self, message: str, transcript: str, payload: Optional[Dict[str, Any]] = None
@@ -323,8 +487,23 @@ class VoiceEngine:
         self.state.publish(
             "action", {"action": "not_found", "message": message, "match": payload or {}}
         )
+        threading.Thread(
+            target=self._announce_error_and_return, daemon=True, name="zee-erro"
+        ).start()
+
+    def _announce_error_and_return(self) -> None:
+        """Toca o aviso de erro e só então volta para a Home.
+
+        A espera considera a duração real do áudio: voltar antes do fim
+        reativaria a wakeword com o alto-falante ainda falando.
+        """
         delay = float(self.config.get("app.error_auto_return_seconds", 5))
-        threading.Timer(delay, self._return_home_if_error).start()
+        inicio = time.time()
+        self.sounds.play("error", blocking=True)
+        restante = delay - (time.time() - inicio)
+        if restante > 0:
+            time.sleep(restante)
+        self._return_home_if_error()
 
     def _return_home_if_error(self) -> None:
         if self.state.state is State.ERROR:
@@ -352,7 +531,17 @@ class VoiceEngine:
             "wakeword_phrases": self.detector.phrases,
             "grammar": self.detector.grammar,
             "audio_player": " ".join(self.player.command) if self.player.command else None,
-            "welcome_audio": str(self.welcome_audio) if self.welcome_audio else None,
-            "welcome_audio_exists": bool(self.welcome_audio and self.welcome_audio.exists()),
+            "sounds": self.sounds.status(),
+            "command_recognizer": {
+                "preferred": "whisper.cpp",
+                "active": "whisper.cpp" if self.command_transcriber.available else "vosk",
+                "whisper_available": self.command_transcriber.available,
+                "whisper_model": str(self.command_transcriber.model_path),
+                "whisper_binary": str(self.command_transcriber.binary or ""),
+                "persistent": self.command_transcriber.persistent,
+                "server_ready": self.command_transcriber.server_ready,
+                "server_binary": str(self.command_transcriber.server_binary or ""),
+            },
+            "tts": self.tts.status() if self.tts is not None else {"available": False},
             "last_transcript": self.last_transcript,
         }

@@ -7,3 +7,5 @@ vosk>=0.3.44,<0.3.45; platform_system == "Darwin"  # última wheel disponível n
 sounddevice>=0.4.6         # captura de áudio via PortAudio (requer libportaudio2)
 rapidfuzz>=3.6             # busca tolerante (fuzzy matching)
 qrcode>=7.4                # QR Code do Wi-Fi em SVG (não requer Pillow)
+llama-cpp-python>=0.2.90; platform_system == "Linux" or platform_system == "Darwin"  # SLM GGUF local no Raspberry Pi e macOS
+piper-tts>=1.3,<2; platform_system == "Linux"  # leitura offline das respostas em pt-BR

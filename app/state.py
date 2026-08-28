@@ -25,6 +25,7 @@ class State(str, Enum):
     WAKEWORD_DETECTED = "WAKEWORD_DETECTED"
     WAITING_USER = "WAITING_USER"
     PROCESSING_COMMAND = "PROCESSING_COMMAND"
+    ANSWERING = "ANSWERING"
     MENU = "MENU"
     RESOURCE_LIST = "RESOURCE_LIST"
     RESOURCE_VIEW = "RESOURCE_VIEW"
@@ -39,6 +40,7 @@ VOICE_CYCLE_STATES = {
     State.WAKEWORD_DETECTED,
     State.WAITING_USER,
     State.PROCESSING_COMMAND,
+    State.ANSWERING,
 }
 
 #: Telas que o frontend pode pedir via /api/navigation.
@@ -62,10 +64,18 @@ class StateMachine:
         self._context: Dict[str, Any] = {}
         self._changed_at = time.time()
         self._wakeword_blocked_until = 0.0
+        self._audio_playing = False
         self._mic_available = False
         self._mic_device: Optional[str] = None
         self._model_loaded = False
         self._voice_error: Optional[str] = None
+        self._speech_recognizer: Dict[str, Any] = {
+            "engine": None,
+            "model": None,
+            "label": "Inicializando...",
+            "available": False,
+            "fallback": False,
+        }
         self._network: Dict[str, Any] = {"connected": False, "ssid": None, "ip": None}
 
     # ----------------------------------------------------------------- estado
@@ -114,13 +124,23 @@ class StateMachine:
     # -------------------------------------------------------------- wakeword
     @property
     def wakeword_enabled(self) -> bool:
-        """Verdadeiro apenas na Home, fora do período de cooldown."""
+        """Verdadeiro apenas na Home, em silêncio e fora do cooldown."""
         with self._lock:
             if self._state is not State.HOME_LISTENING:
                 return False
             if not self._mic_available or not self._model_loaded:
                 return False
+            if self._audio_playing:
+                return False
             return time.time() >= self._wakeword_blocked_until
+
+    def set_audio_playing(self, playing: bool) -> None:
+        """Suspende a wakeword enquanto o próprio Zee está falando."""
+        with self._lock:
+            if self._audio_playing == playing:
+                return
+            self._audio_playing = playing
+        log.debug("áudio do assistente: %s", "tocando" if playing else "parado")
 
     @property
     def voice_cycle_active(self) -> bool:
@@ -151,6 +171,34 @@ class StateMachine:
         log.info("modelo Vosk: %s%s", "carregado" if loaded else "indisponível", f" ({error})" if error else "")
         self.bus.publish("capabilities", self.snapshot())
 
+    def set_speech_recognizer(
+        self,
+        engine: Optional[str],
+        model: Optional[str],
+        available: bool = True,
+        fallback: bool = False,
+    ) -> None:
+        """Informa qual motor/modelo transcreve os comandos do usuário."""
+        engine_name = str(engine or "").strip()
+        model_name = str(model or "").strip()
+        if available and engine_name:
+            label = f"{engine_name} {model_name}".strip()
+        else:
+            label = "Indisponível"
+        recognizer = {
+            "engine": engine_name or None,
+            "model": model_name or None,
+            "label": label,
+            "available": bool(available),
+            "fallback": bool(fallback),
+        }
+        with self._lock:
+            changed = self._speech_recognizer != recognizer
+            self._speech_recognizer = recognizer
+        if changed:
+            log.info("reconhecedor de comandos: %s", label)
+            self.bus.publish("capabilities", self.snapshot())
+
     def set_network(self, connected: bool, ssid: Optional[str] = None, ip: Optional[str] = None) -> None:
         with self._lock:
             changed = self._network.get("connected") != connected or self._network.get("ssid") != ssid
@@ -165,6 +213,7 @@ class StateMachine:
             self._state is State.HOME_LISTENING
             and self._mic_available
             and self._model_loaded
+            and not self._audio_playing
             and time.time() >= self._wakeword_blocked_until
         )
         return {
@@ -172,9 +221,11 @@ class StateMachine:
             "context": dict(self._context),
             "changed_at": self._changed_at,
             "wakeword_enabled": wakeword,
+            "audio_playing": self._audio_playing,
             "voice_cycle_active": self._state in VOICE_CYCLE_STATES,
             "microphone": {"available": self._mic_available, "device": self._mic_device},
             "voice_model": {"loaded": self._model_loaded, "error": self._voice_error},
+            "speech_recognizer": dict(self._speech_recognizer),
             "network": dict(self._network),
         }
 

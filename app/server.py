@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import threading
 from typing import Any, Dict, Iterator, Optional
 
 from flask import Flask, Response, jsonify, render_template, request
@@ -120,12 +121,18 @@ def create_app(services: ZeeServices, config: Optional[Config] = None) -> Flask:
                 return jsonify({"error": "tipo inválido"}), 400
             context["tipo"] = tipo
             context["mode"] = payload.get("mode") or "list"
+            context["return_to"] = (
+                "home" if payload.get("return_to") == "home" else "menu"
+            )
         elif view == "resource":
             resource = library.get(payload.get("resource_id"))
             if resource is None:
                 return jsonify({"error": "recurso não encontrado"}), 404
             context["resource_id"] = resource.id
             context["tipo"] = resource.tipo
+            context["return_to"] = (
+                "home" if payload.get("return_to") == "home" else "menu"
+            )
 
         new_state = state.set_view(view, context)
         return jsonify({"ok": True, "state": new_state.value, "wakeword_enabled": state.wakeword_enabled})
@@ -142,8 +149,20 @@ def create_app(services: ZeeServices, config: Optional[Config] = None) -> Flask:
 
     @app.post("/api/voice/simulate")
     def api_voice_simulate():
-        """Dispara o ciclo de voz sem microfone (procedimento de teste)."""
+        """Dispara o ciclo de voz sem microfone (procedimento de teste).
+
+        Com ``{"wakeword": true}`` executa o ciclo completo — toca o
+        "pode falar" e grava do microfone, como se você tivesse dito "Oi, Zee".
+        """
         payload: Dict[str, Any] = request.get_json(silent=True) or {}
+        if payload.get("wakeword") and not payload.get("text"):
+            if not state.snapshot()["microphone"]["available"]:
+                return jsonify({"error": "microfone indisponível"}), 409
+            threading.Thread(
+                target=services.voice.run_interaction, daemon=True, name="zee-simulacao"
+            ).start()
+            return jsonify({"ok": True, "mode": "wakeword"}), 202
+
         text = str(payload.get("text", "")).strip()
         if not text:
             return jsonify({"error": "informe o campo 'text'"}), 400
@@ -151,6 +170,18 @@ def create_app(services: ZeeServices, config: Optional[Config] = None) -> Flask:
             return jsonify({"error": "comando muito longo"}), 400
         result = services.voice.simulate_command(text)
         return jsonify({"ok": True, "result": result.to_dict(services.matcher.max_suggestions)})
+
+    @app.post("/api/voice/sound")
+    def api_voice_sound():
+        """Toca um efeito sonoro — usado para testar o alto-falante."""
+        payload: Dict[str, Any] = request.get_json(silent=True) or {}
+        name = str(payload.get("name", "")).strip().lower()
+        if name not in services.sounds.NAMES:
+            return jsonify({"error": "som inválido", "sons": list(services.sounds.NAMES)}), 400
+        if not services.sounds.exists(name):
+            return jsonify({"ok": False, "error": f"arquivo do som '{name}' não encontrado"}), 404
+        services.sounds.play(name, blocking=False)
+        return jsonify({"ok": True, "name": name, "path": str(services.sounds.path(name))})
 
     @app.post("/api/voice/match")
     def api_voice_match():

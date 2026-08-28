@@ -105,16 +105,46 @@ O script é **idempotente**: pode ser executado novamente sem quebrar a instala�
 cd ~/zee-assistant
 
 # imagem oficial da abelha (PNG quadrado, fundo transparente, ~512 px)
-cp /caminho/zee.png static/assets/images/zee.png
-
-# áudio "Oi, estou ouvindo." (MP3 curto, mono)
-cp /caminho/oi_estou_ouvindo.mp3 static/assets/audio/oi_estou_ouvindo.mp3
+cp /caminho/zee-circulo.mp4 static/assets/images/zee-circulo.mp4
 
 sudo systemctl restart zee-assistant
 ```
 
-Sem esses arquivos o sistema **não trava**: usa o desenho SVG da abelha e
-registra `Welcome audio not found`, seguindo direto para a captura do comando.
+Sem a imagem o sistema **não trava**: usa o desenho SVG da abelha.
+
+Os quatro avisos sonoros já vêm no projeto:
+
+| Arquivo | Quando toca |
+|---|---|
+| `static/assets/audio/saudacao.mp3` | o assistente ficou pronto |
+| `static/assets/audio/pode-falar.mp3` | a wakeword foi reconhecida |
+| `static/assets/audio/encontrei.mp3` | o pedido foi entendido |
+| `static/assets/audio/erro.mp3` | o pedido não foi entendido |
+
+Para trocar por outra voz, substitua os arquivos (mesmo nome) ou aponte outros
+caminhos em `config/config.json` → `voice.sounds`. Arquivo ausente não trava
+nada: o log registra `<Nome> not found` e o fluxo segue.
+
+Teste o alto-falante logo após a instalação:
+
+```bash
+curl -X POST localhost:5000/api/voice/sound -H 'Content-Type: application/json' \
+     -d '{"name":"startup"}'
+```
+
+### Piper TTS — leitura das respostas
+
+O instalador completo já configura o Piper. Em uma instalação existente,
+execute:
+
+```bash
+./scripts/install_piper.sh
+sudo systemctl restart zee-assistant
+```
+
+A voz `pt_BR-faber-medium` funciona inteiramente offline depois do download.
+Se o Piper ou o modelo estiver indisponível, a resposta permanece na tela e o
+restante do assistente continua funcionando normalmente.
 
 ---
 

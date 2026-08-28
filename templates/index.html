@@ -70,6 +70,10 @@
           <svg class="badge__icon"><use href="#icon-mic"></use></svg>
           <span id="badge-mic-text">Microfone indisponível</span>
         </span>
+        <span class="badge badge--info" id="badge-recognizer">
+          <svg class="badge__icon"><use href="#icon-mic"></use></svg>
+          <span id="badge-recognizer-text">Modelo de voz: inicializando...</span>
+        </span>
         <span class="badge badge--warn" id="badge-net" hidden>
           <svg class="badge__icon"><use href="#icon-wifi"></use></svg> Sem internet
         </span>
@@ -79,19 +83,39 @@
     <div class="home-center">
       <div class="zee-stage" id="zee-stage">
         <div class="zee-halo"></div>
-        <img class="zee-face" id="zee-face" src="/static/assets/images/zee.png" alt="Zee, a abelha assistente">
+        <video
+          class="zee-face"
+          id="zee-face"
+          src="/static/assets/images/zee-circulo.mp4"
+          aria-label="Zee, a abelha assistente"
+          autoplay
+          loop
+          muted
+          playsinline
+          preload="auto"
+        ></video>
       </div>
 
       <p class="home-hint" id="home-hint">{{ ui.idle_hint }}</p>
+
+      <div class="mic-indicator" id="mic-indicator" role="status" aria-live="polite">
+        <span class="mic-indicator__visual" aria-hidden="true">
+          <span class="mic-indicator__ring"></span>
+          <svg class="mic-indicator__icon"><use href="#icon-mic"></use></svg>
+        </span>
+        <span class="mic-indicator__label" id="mic-indicator-label">Microfone ligado</span>
+      </div>
 
       <div class="mic-wave" id="mic-wave" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
 
       <p class="home-transcript" id="home-transcript"></p>
+      <p class="home-answer" id="home-answer" hidden></p>
     </div>
 
     <div class="home-bottom">
+      <button type="button" class="btn btn--ghost btn--principal" id="btn-principal" hidden>PRINCIPAL</button>
       <button type="button" class="btn btn--primary btn--menu" id="btn-menu">MENU</button>
     </div>
   </section>
@@ -133,7 +157,7 @@
   <!-- --------------------------------------------------------------- LISTAGEM -->
   <section class="view view--list" id="view-list" hidden>
     <header class="topbar">
-      <button type="button" class="btn btn--ghost btn--back" data-back="menu">
+      <button type="button" class="btn btn--ghost btn--back" id="btn-list-back">
         <svg class="btn__icon"><use href="#icon-back"></use></svg> VOLTAR
       </button>
       <h1 class="topbar__title" id="list-title">Conteúdos</h1>

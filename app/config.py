@@ -45,7 +45,16 @@ DEFAULTS: Dict[str, Any] = {
         "sample_rate": 16000,
         "block_size": 4000,
         "input_device": None,
-        "welcome_audio": "static/assets/audio/oi_estou_ouvindo.mp3",
+        # Efeitos sonoros por momento do fluxo (ver app/audio.py: SoundBoard).
+        "sounds": {
+            "startup": "static/assets/audio/saudacao.mp3",
+            "wakeword": "static/assets/audio/pode-falar.mp3",
+            "found": "static/assets/audio/encontrei.mp3",
+            "error": "static/assets/audio/erro.mp3",
+        },
+        "sound_tail_silence_seconds": 0.4,
+        # Compatibilidade: usado apenas se "sounds.wakeword" não existir.
+        "welcome_audio": "",
         "audio_players": [
             ["mpg123", "-q"],
             ["afplay"],
@@ -82,11 +91,27 @@ DEFAULTS: Dict[str, Any] = {
             },
         },
         "command": {
-            "max_record_seconds": 10,
+            "max_record_seconds": 12,
             "min_record_seconds": 0.8,
-            "no_speech_timeout_seconds": 5.0,
+            "no_speech_timeout_seconds": 10.0,
             "silence_rms_threshold": 350,
             "silence_duration_seconds": 1.2,
+            "min_speech_blocks": 2,
+            "max_alternatives": 5,
+            "pre_capture_flush_blocks": 1,
+            "whisper": {
+                "enabled": True,
+                "binary": "tools/whisper.cpp/build/bin/whisper-cli",
+                "model_path": "models/whisper/ggml-base-q5_1.bin",
+                "language": "pt",
+                "threads": 3,
+                "timeout_seconds": 30,
+                "persistent": True,
+                "server_binary": "tools/whisper.cpp/build/bin/whisper-server",
+                "server_host": "127.0.0.1",
+                "server_port": 8178,
+                "server_startup_timeout_seconds": 30,
+            },
         },
     },
     "matching": {
@@ -97,7 +122,38 @@ DEFAULTS: Dict[str, Any] = {
         "description_weight": 0.2,
         "type_bonus": 12,
         "type_penalty": 25,
-        "synonyms": {"ia": "inteligencia artificial", "i a": "inteligencia artificial"},
+        "synonyms": {"ia": "inteligencia artificial"},
+        # Trechos que o reconhecedor escreve errado (o modelo PT-BR não tem
+        # "podcast" no vocabulário e sempre transcreve "pode se"/"de pode").
+        "phonetic_aliases": {
+            "pode se": "podcast",
+            "pode que se": "podcast",
+            "pode ce": "podcast",
+            "pode si": "podcast",
+            "podi casti": "podcast",
+            "pod caster": "podcast",
+            "de pode": "de podcast",
+            "o pode": "o podcast",
+            "i a": "inteligencia artificial",
+            "y a": "inteligencia artificial",
+            # "áudios" no plural sai como "deus"/"ao deus" no modelo PT-BR.
+            "lista de deus": "lista de audios",
+            "lista de ao deus": "lista de audios",
+            "lista de alvos": "lista de audios",
+        },
+    },
+    "tts": {
+        "enabled": True,
+        "model_path": "models/piper/pt_BR-faber-medium.onnx",
+        "length_scale": 1.0,
+        "volume": 1.0,
+        "playback_timeout_seconds": 60,
+    },
+    "warmup": {
+        "enabled": True,
+        "delay_seconds": 5,
+        "slm": True,
+        "tts": True,
     },
     "network": {
         "manage_wifi": True,
@@ -134,7 +190,7 @@ FLAT_ALIASES = {
     "fuzzy_match_threshold": ("matching", "confidence_threshold"),
     "app_port": ("app", "port"),
     "resources_file": ("app", "resources_file"),
-    "welcome_audio": ("voice", "welcome_audio"),
+    "welcome_audio": ("voice", "sounds", "wakeword"),
     "vosk_model_path": ("voice", "model_path"),
 }
 

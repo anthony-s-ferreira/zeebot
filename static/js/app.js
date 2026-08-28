@@ -24,10 +24,16 @@
     },
     hint: $('#home-hint'),
     transcript: $('#home-transcript'),
+    answer: $('#home-answer'),
+    principalButton: $('#btn-principal'),
+    listBackButton: $('#btn-list-back'),
+    micIndicator: $('#mic-indicator'),
+    micIndicatorLabel: $('#mic-indicator-label'),
     badgeMic: $('#badge-mic'),
     badgeMicText: $('#badge-mic-text'),
+    badgeRecognizer: $('#badge-recognizer'),
+    badgeRecognizerText: $('#badge-recognizer-text'),
     badgeNet: $('#badge-net'),
-    zeeFace: $('#zee-face'),
     listTitle: $('#list-title'),
     listSubtitle: $('#list-subtitle'),
     listCards: $('#list-cards'),
@@ -59,13 +65,15 @@
     currentKey: null,
     pendingKey: null,
     lastOptions: [],
-    lastList: { tipo: null, mode: 'list' },
+    lastList: { tipo: null, mode: 'list', returnTo: 'menu' },
     overlayTimer: null,
     helpTimer: null,
     audio: null,
     sse: null,
     sseRetry: 0,
     pollTimer: null,
+    startupAudioPlayed: false,
+    micActivityTimer: null,
   };
 
   /* ------------------------------------------------------------------ API */
@@ -119,10 +127,12 @@
     if (!snapshot) return;
     store.backend = snapshot;
     el.body.dataset.state = snapshot.state;
+    if (snapshot.state !== 'WAITING_USER') setMicrophoneActivity(false);
     updateBadges(snapshot);
     updateHint(snapshot);
 
     const ctx = snapshot.context || {};
+    if (el.principalButton) el.principalButton.hidden = snapshot.state !== 'ANSWERING';
     switch (snapshot.state) {
       case 'WIFI_SETUP':
         teardownResource();
@@ -148,6 +158,25 @@
     }
   }
 
+  function setMicrophoneActivity(active, level = 0) {
+    if (!el.micIndicator) return;
+    const isListening = el.body.dataset.state === 'WAITING_USER';
+    const isSpeaking = Boolean(active) && isListening;
+    el.micIndicator.classList.toggle('is-speaking', isSpeaking);
+    el.micIndicator.style.setProperty('--mic-level', String(Math.max(0, Math.min(1, Number(level) || 0))));
+    if (el.micIndicatorLabel) {
+      el.micIndicatorLabel.textContent = isSpeaking ? 'Estou ouvindo você' : 'Microfone ligado';
+    }
+    if (store.micActivityTimer) {
+      clearTimeout(store.micActivityTimer);
+      store.micActivityTimer = null;
+    }
+    // Evita deixar o indicador aceso se um evento SSE se perder.
+    if (isSpeaking) {
+      store.micActivityTimer = window.setTimeout(() => setMicrophoneActivity(false), 700);
+    }
+  }
+
   function updateHint(snapshot) {
     if (!el.hint) return;
     const map = {
@@ -155,6 +184,7 @@
       WAKEWORD_DETECTED: TEXTS.listening || 'Oi! Estou ouvindo...',
       WAITING_USER: TEXTS.waiting || 'Aguardando usuário...',
       PROCESSING_COMMAND: TEXTS.processing || 'Procurando conteúdo...',
+      ANSWERING: 'Resposta:',
       ERROR: (snapshot.context && snapshot.context.message) || TEXTS.notFound,
     };
     if (map[snapshot.state]) el.hint.textContent = map[snapshot.state];
@@ -164,6 +194,7 @@
     if (snapshot.state === 'HOME_LISTENING' && (!mic.available || !model.loaded)) {
       el.hint.textContent = 'Toque em MENU para explorar';
     }
+    if (el.answer && snapshot.state === 'HOME_LISTENING') el.answer.hidden = true;
     if (snapshot.state !== 'PROCESSING_COMMAND' && snapshot.state !== 'ERROR' && el.transcript) {
       if (snapshot.state === 'HOME_LISTENING') el.transcript.textContent = '';
     }
@@ -180,6 +211,16 @@
           ? (TEXTS.noMic || 'Microfone indisponível')
           : 'Voz indisponível (modelo)';
       }
+    }
+    const recognizer = snapshot.speech_recognizer || {};
+    if (el.badgeRecognizerText) {
+      const label = recognizer.label || 'Inicializando...';
+      const fallback = recognizer.fallback ? ' (fallback)' : '';
+      el.badgeRecognizerText.textContent = `Modelo de voz: ${label}${fallback}`;
+    }
+    if (el.badgeRecognizer) {
+      el.badgeRecognizer.classList.toggle('badge--warn', recognizer.available === false);
+      el.badgeRecognizer.classList.toggle('badge--info', recognizer.available !== false);
     }
     const net = snapshot.network || {};
     if (el.badgeNet) el.badgeNet.hidden = Boolean(net.connected) || snapshot.state === 'WIFI_SETUP';
@@ -201,7 +242,8 @@
   async function openList(ctx = {}) {
     const mode = ctx.mode || 'list';
     const tipo = ctx.tipo || null;
-    store.lastList = { tipo, mode };
+    const returnTo = ctx.return_to === 'home' || ctx.source === 'voz' ? 'home' : 'menu';
+    store.lastList = { tipo, mode, returnTo };
     teardownResource();
     showView('list');
 
@@ -288,7 +330,10 @@
 
     card.appendChild(thumb);
     card.appendChild(body);
-    card.addEventListener('click', () => navigate('resource', { resource_id: item.id }));
+    card.addEventListener('click', () => navigate('resource', {
+      resource_id: item.id,
+      return_to: store.lastList.returnTo,
+    }));
     return card;
   }
 
@@ -519,7 +564,11 @@
 
   function goBackFromResource() {
     if (store.lastList && (store.lastList.tipo || store.lastList.mode === 'options')) {
-      navigate('list', { tipo: store.lastList.tipo, mode: store.lastList.mode });
+      navigate('list', {
+        tipo: store.lastList.tipo,
+        mode: store.lastList.mode,
+        return_to: store.lastList.returnTo,
+      });
     } else {
       navigate('menu');
     }
@@ -579,17 +628,31 @@
         break;
       case 'show_options':
         store.lastOptions = (data.match && data.match.candidates) || [];
-        openList({ mode: 'options' });
+        openList({ mode: 'options', source: 'voz', return_to: 'home' });
         break;
       case 'open_list':
         invalidateResources();
-        openList({ tipo: data.tipo, mode: 'list' });
+        openList({ tipo: data.tipo, mode: 'list', source: 'voz', return_to: 'home' });
+        break;
+      case 'open_menu':
+        hideOverlay();
+        teardownResource();
+        showView('menu');
+        refreshCounts();
         break;
       case 'not_found': {
         const seconds = Number(store.thresholds.error_auto_return_seconds || 5);
         showOverlay(data.message || TEXTS.notFound, '🤔', seconds * 1000);
         break;
       }
+      case 'show_answer':
+        hideOverlay();
+        showView('home');
+        if (el.answer) {
+          el.answer.textContent = data.answer || 'Não consegui responder agora.';
+          el.answer.hidden = false;
+        }
+        break;
       case 'go_home':
         hideOverlay();
         break;
@@ -607,6 +670,11 @@
     source.addEventListener('open', () => {
       store.sseRetry = 0;
       stopPolling();
+      if (!store.startupAudioPlayed) {
+        store.startupAudioPlayed = true;
+        const audio = new Audio('/static/assets/audio/saudacao.mp3');
+        audio.play().catch((error) => console.warn('[zee] saudação bloqueada pelo navegador:', error));
+      }
       console.info('[zee] conectado ao fluxo de eventos');
     });
     source.addEventListener('state', (event) => {
@@ -635,6 +703,11 @@
       const text = payload && payload.data && payload.data.text;
       if (el.transcript) el.transcript.textContent = text ? `"${text}"` : '';
     });
+    source.addEventListener('microphone_activity', (event) => {
+      const payload = safeParse(event.data);
+      const activity = payload && (payload.data || payload);
+      if (activity) setMicrophoneActivity(activity.active, activity.level);
+    });
     source.addEventListener('resources', () => invalidateResources());
     source.addEventListener('error', () => {
       // O EventSource reconecta sozinho; o polling cobre falhas longas.
@@ -659,6 +732,7 @@
           context: status.context,
           microphone: status.microphone,
           voice_model: status.voice_model,
+          speech_recognizer: status.speech_recognizer,
           network: status.network,
         });
       } catch (error) { /* segue tentando */ }
@@ -671,6 +745,8 @@
   /* ------------------------------------------------------------- eventos UI */
   function bindUI() {
     $('#btn-menu').addEventListener('click', () => navigate('menu'));
+    $('#btn-principal').addEventListener('click', () => navigate('home'));
+    $('#btn-list-back').addEventListener('click', () => navigate(store.lastList.returnTo));
 
     document.querySelectorAll('.menu-card').forEach((card) => {
       card.addEventListener('click', () => {
@@ -696,14 +772,6 @@
       openResource(resource.id);
     });
     $('#overlay-close').addEventListener('click', hideOverlay);
-
-    // Imagem oficial ainda não instalada: cai para o SVG do projeto.
-    el.zeeFace.addEventListener('error', () => {
-      if (!el.zeeFace.dataset.fallback) {
-        el.zeeFace.dataset.fallback = '1';
-        el.zeeFace.src = '/static/assets/images/zee.svg';
-      }
-    }, { once: false });
 
     window.addEventListener('online', () => { if (el.badgeNet) el.badgeNet.hidden = true; });
     window.addEventListener('offline', () => { if (el.badgeNet) el.badgeNet.hidden = false; });
@@ -734,6 +802,7 @@
         context: status.context,
         microphone: status.microphone,
         voice_model: status.voice_model,
+        speech_recognizer: status.speech_recognizer,
         network: status.network,
       });
       refreshCounts();

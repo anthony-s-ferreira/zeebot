@@ -21,8 +21,8 @@ telas podem ser abertas para conferir o visual.
 | Busca fuzzy e classificação de intenção | ✅ | |
 | Reconhecimento de voz (Vosk PT-BR) | ✅ | wheels do `vosk` e `sounddevice` existem para macOS |
 | Wakeword pelo microfone do Mac | ✅ | requer permissão de microfone |
-| MP3 de saudação | ✅ | usa o `afplay` (já vem no macOS) |
-| Testes automatizados (`pytest`) | ✅ | 203 testes |
+| Avisos sonoros (4 MP3) | ✅ | usa o `afplay` (já vem no macOS) |
+| Testes automatizados (`pytest`) | ✅ | 275 testes |
 | Tela de configuração de Wi-Fi + QR Code | 🟡 | a tela e o QR aparecem; o Access Point real, não |
 | Captive portal (página do celular) | 🟡 | dá para abrir em `/setup` e testar o layout |
 | Criar o Access Point `Zee-Setup` | ❌ | precisa de `nmcli` (Linux) |
@@ -69,6 +69,20 @@ Sem microfone/modelo (ou para focar só na interface):
 venv/bin/python main.py --no-wifi --no-voice --port 5000
 ```
 
+No Raspberry Pi, o app também pode responder perguntas gerais com um SLM local.
+Instale o runtime e baixe o modelo pequeno uma vez:
+
+```bash
+venv/bin/pip install -r requirements.txt
+./scripts/download_slm_model.sh
+```
+
+O modelo padrão é o Qwen2.5 0.5B Instruct em GGUF quantizado (cerca de 500 MB).
+Ele é carregado sob demanda. Pedidos que correspondem a um recurso do catálogo
+sempre abrem o recurso; perguntas como `qual o valor de 10 + 10?` recebem uma
+resposta curta na tela. O arquivo `config/config.json` permite ajustar
+`context_size`, `max_tokens` e `threads`.
+
 Abra **http://127.0.0.1:5000**. O log aparece no terminal e em `logs/zee.log`.
 
 Para simular o comportamento do dispositivo, abra o Chrome/Chromium assim:
@@ -81,7 +95,7 @@ open -a "Google Chrome" --args --app=http://127.0.0.1:5000 --window-size=1024,60
 
 ## 3. Testar a interface
 
-1. **Home** — abelha (SVG placeholder até você colocar `zee.png`), texto
+1. **Home** — animação `zee-circulo.mp4`, texto
    `Diga "Oi, Zee"` e o botão **MENU**.
 2. **MENU** → quatro cards com a contagem de itens de cada tipo.
 3. **VÍDEOS / ÁUDIOS / LIVROS / JOGOS** → listagens vindas do JSON.
@@ -226,9 +240,26 @@ Com o navegador aberto em `http://127.0.0.1:5000`, diga **"Oi, Zee"** e depois
 o comando. A tela deve passar por `Oi! Estou ouvindo...` →
 `Aguardando usuário...` → `Procurando conteúdo...` → conteúdo aberto.
 
-Para ouvir a saudação, coloque o arquivo em
-`static/assets/audio/oi_estou_ouvindo.mp3` (o macOS reproduz com `afplay`).
-Sem ele, o log mostra `Welcome audio not found` e o ciclo continua.
+Para testar o caminho do SLM, diga **"Oi, Zee"** e depois **"qual o valor de 10
++ 10?"**. A tela deve mostrar a resposta sem abrir um recurso. Se o runtime ou
+o arquivo do modelo estiver ausente, o app volta ao comportamento de conteúdo
+não encontrado e registra o motivo no log.
+
+Os quatro avisos sonoros tocam pelo `afplay`. Teste cada um sem falar:
+
+```bash
+for som in startup wakeword found error; do
+  curl -s -X POST localhost:5000/api/voice/sound -H 'Content-Type: application/json' \
+       -d "{\"name\":\"$som\"}"; sleep 3
+done
+```
+
+E o ciclo completo (toca "pode falar" e grava do microfone):
+
+```bash
+curl -X POST localhost:5000/api/voice/simulate -H 'Content-Type: application/json' \
+     -d '{"wakeword":true}'
+```
 
 ---
 
@@ -273,9 +304,12 @@ Vozes em português instaladas:
 say -v '?' | grep pt_BR      # se não houver, instale em Ajustes → Acessibilidade → Conteúdo Falado
 ```
 
-> **Nota importante descoberta nos testes:** o modelo pequeno **não transcreve
-> siglas soletradas** — "ABC" vira `se`, "IA" vira `dia`. Por isso os recursos
-> aceitam **apelidos**; veja a seção 9.
+> **Notas importantes descobertas nos testes:** o modelo pequeno **não tem
+> "podcast" no vocabulário** (escreve `pode se`) e **não transcreve siglas
+> soletradas** ("ABC" → `se`, "IA" → `dia`). Por isso existem os
+> `matching.phonetic_aliases` (corrigem a transcrição) e os `aliases` de cada
+> recurso (outras formas de pedir); veja a seção 9 e o
+> [TROUBLESHOOTING §6](TROUBLESHOOTING.md).
 
 ---
 
@@ -335,12 +369,20 @@ venv/bin/python scripts/voice_test.py match "quero jogar o jogo do alfabeto"
 **Regra prática:** escreva títulos e apelidos com palavras inteiras
 ("inteligência artificial", "alfabeto"), não com siglas ("IA", "ABC").
 
+E teste os pedidos de listagem, que não dependem do catálogo:
+
+```bash
+venv/bin/python scripts/voice_test.py match "lista de podcasts"   # open_list / audio
+venv/bin/python scripts/voice_test.py match "quais jogos existem" # open_list / jogo
+venv/bin/python scripts/voice_test.py match "abre o menu"         # open_menu
+```
+
 ---
 
 ## 10. Testes automatizados
 
 ```bash
-venv/bin/python -m pytest            # 203 testes
+venv/bin/python -m pytest            # 275 testes
 venv/bin/python -m pytest -v tests/test_matcher.py
 venv/bin/python -m pytest -k wakeword
 ```
@@ -354,6 +396,7 @@ Não exigem microfone, rede nem modelo — rodam em ~1 segundo.
 | Item | macOS | Raspberry Pi OS |
 |---|---|---|
 | Player de MP3 | `afplay` (nativo) | `mpg123` (instalado pelo `install.sh`) |
+| Avisos sonoros | iguais | iguais |
 | Áudio de entrada | CoreAudio via PortAudio | ALSA via PortAudio |
 | Gerenciamento de Wi-Fi | não disponível (`--no-wifi`) | `nmcli` (NetworkManager) |
 | Inicialização | manual (`main.py`) | `systemd` + autostart do Chromium |

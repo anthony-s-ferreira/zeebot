@@ -1,9 +1,14 @@
 """Normalização de texto: acentos, maiúsculas, pontuação e tipos."""
 
+import pytest
+
 from app.utils.text import (
+    apply_phrase_aliases,
     apply_synonyms,
     clean_query,
+    detect_list_intent,
     detect_type,
+    detect_type_detailed,
     normalize,
     remove_stopwords,
     strip_accents,
@@ -83,3 +88,81 @@ class TestCleanQuery:
         )
         assert "video" not in limpo
         assert "introducao" in limpo and "inteligencia" in limpo and "artificial" in limpo
+
+
+class TestTiposFortesEFracos:
+    """Substantivos vencem verbos: "mostra a lista de podcasts" é áudio."""
+
+    def test_substantivo_vence_verbo(self):
+        tipo, _ = detect_type("mostra a lista de podcasts")
+        assert tipo == "audio"
+
+    def test_verbo_vale_quando_nao_ha_substantivo(self):
+        tipo, _ = detect_type("quero escutar inteligência artificial")
+        assert tipo == "audio"
+
+    def test_forca_reportada(self):
+        assert detect_type_detailed("quero o podcast")[2] == "strong"
+        assert detect_type_detailed("quero ouvir isso")[2] == "weak"
+        assert detect_type_detailed("bom dia")[2] is None
+
+    def test_novos_verbos_de_audio(self):
+        assert detect_type("toca o podcast")[0] == "audio"
+
+    def test_livro_por_estudar(self):
+        assert detect_type("quero estudar o material")[0] == "livro"
+
+
+class TestIntencaoDeListagem:
+    @pytest.mark.parametrize(
+        "frase",
+        [
+            "lista de vídeos",
+            "mostra a lista de podcasts",
+            "quais jogos existem",
+            "mostra todos os livros",
+            "quero ver todas as músicas",
+            "abre o menu",
+            "mostra tudo",
+        ],
+    )
+    def test_detecta(self, frase):
+        assert detect_list_intent(frase) is True
+
+    @pytest.mark.parametrize(
+        "frase",
+        [
+            "quero assistir ao vídeo de introdução",
+            "abra o livro fundamentos",
+            "quero jogar o jogo do alfabeto",
+        ],
+    )
+    def test_nao_detecta_em_pedido_especifico(self, frase):
+        assert detect_list_intent(frase) is False
+
+
+class TestAliasesFoneticos:
+    """O modelo não tem "podcast" no vocabulário: sempre escreve "pode se"."""
+
+    ALIASES = {"pode se": "podcast", "de pode": "de podcast"}
+
+    def test_corrige_podcast(self):
+        assert apply_phrase_aliases("pode se de inteligencia", self.ALIASES) == (
+            "podcast de inteligencia"
+        )
+
+    def test_corrige_dentro_da_frase(self):
+        assert apply_phrase_aliases("mostrar lista de pode", self.ALIASES) == (
+            "mostrar lista de podcast"
+        )
+
+    def test_respeita_limite_de_palavra(self):
+        """"pode ser" é uma frase comum e não pode virar "podcast"."""
+        assert apply_phrase_aliases("pode ser que sim", self.ALIASES) == "pode ser que sim"
+
+    def test_sem_aliases_nao_altera(self):
+        assert apply_phrase_aliases("texto qualquer", {}) == "texto qualquer"
+
+    def test_troca_habilita_deteccao_de_tipo(self):
+        corrigido = apply_phrase_aliases("pode se de inteligencia", self.ALIASES)
+        assert detect_type(corrigido)[0] == "audio"

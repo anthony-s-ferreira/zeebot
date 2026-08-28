@@ -12,10 +12,13 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from ..resources import Resource, VALID_TYPES
 from ..utils.text import (
+    LIST_KEYWORDS,
     STOPWORDS,
     TYPE_KEYWORDS,
+    apply_phrase_aliases,
     apply_synonyms,
-    detect_type,
+    detect_list_intent,
+    detect_type_detailed,
     normalize,
 )
 
@@ -27,6 +30,7 @@ STATUS_OPEN = "open"
 STATUS_MULTIPLE = "multiple"
 STATUS_NOT_FOUND = "not_found"
 STATUS_OPEN_LIST = "open_list"
+STATUS_OPEN_MENU = "open_menu"
 
 
 @dataclass
@@ -55,6 +59,8 @@ class MatchResult:
     detected_type: Optional[str]
     status: str
     candidates: List[Candidate] = field(default_factory=list)
+    #: "strong" (substantivo, ex.: "podcast") ou "weak" (verbo, ex.: "ver").
+    type_strength: Optional[str] = None
 
     @property
     def best(self) -> Optional[Candidate]:
@@ -69,6 +75,7 @@ class MatchResult:
             "query": self.query,
             "normalized_query": self.cleaned_query,
             "detected_type": self.detected_type,
+            "type_strength": self.type_strength,
             "status": self.status,
             "confidence": self.confidence,
             "resource": self.best.resource.to_dict() if self.best else None,
@@ -80,15 +87,19 @@ def _type_words() -> set:
     words = set()
     for entries in TYPE_KEYWORDS.values():
         words.update(normalize(word) for word in entries)
+    words.update(normalize(word) for word in LIST_KEYWORDS)
     return words
 
 
 _TYPE_WORDS = _type_words()
 
 
-def _content_tokens(text: str, synonyms: Dict[str, str]) -> List[str]:
+def _content_tokens(
+    text: str, synonyms: Dict[str, str], aliases: Optional[Dict[str, str]] = None
+) -> List[str]:
     """Tokens que carregam o *assunto* — sem stopwords e sem palavras de tipo."""
-    normalized = apply_synonyms(normalize(text), synonyms)
+    normalized = apply_phrase_aliases(normalize(text), aliases or {})
+    normalized = apply_synonyms(normalized, synonyms)
     return [
         token
         for token in normalized.split()
@@ -115,6 +126,8 @@ class ResourceMatcher:
         self.type_penalty = float(config.get("type_penalty", 25))
         raw_synonyms = config.get("synonyms") or {}
         self.synonyms = {str(k): str(v) for k, v in raw_synonyms.items()}
+        raw_aliases = config.get("phonetic_aliases") or {}
+        self.phonetic_aliases = {str(k): str(v) for k, v in raw_aliases.items()}
 
     # ------------------------------------------------------------------ score
     @staticmethod
@@ -185,22 +198,42 @@ class ResourceMatcher:
         return Candidate(resource, score, title_score, desc_score, type_match)
 
     # ----------------------------------------------------------------- busca
+    def corrected_query(self, text: str) -> str:
+        """Corrige formas conhecidas do reconhecimento antes do roteamento."""
+        return apply_phrase_aliases(normalize(text or ""), self.phonetic_aliases)
+
     def search(self, text: str, resources: Optional[Sequence[Resource]] = None) -> MatchResult:
-        detected_type, type_hits = detect_type(text or "")
-        tokens = _content_tokens(text or "", self.synonyms)
+        # Corrige o que o reconhecedor escreve errado antes de qualquer análise
+        # ("pode se" -> "podcast"): a detecção de tipo depende disso.
+        corrected = self.corrected_query(text)
+        detected_type, type_hits, type_strength = detect_type_detailed(corrected)
+        wants_list = detect_list_intent(corrected)
+        tokens = _content_tokens(corrected, self.synonyms, self.phonetic_aliases)
         cleaned = " ".join(tokens)
 
         pool = list(resources) if resources is not None else self.library.all()
 
+        # "lista de vídeos", "quais jogos existem", "mostra todos os livros"
+        if wants_list:
+            if detected_type in VALID_TYPES:
+                log.info("pedido de listagem: tipo=%s (%s)", detected_type, type_hits)
+                return MatchResult(
+                    text or "", cleaned, detected_type, STATUS_OPEN_LIST, [], type_strength
+                )
+            log.info("pedido de listagem sem tipo definido — abrindo o menu")
+            return MatchResult(text or "", cleaned, None, STATUS_OPEN_MENU, [], None)
+
         if not pool:
-            return MatchResult(text or "", cleaned, detected_type, STATUS_NOT_FOUND, [])
+            return MatchResult(text or "", cleaned, detected_type, STATUS_NOT_FOUND, [], type_strength)
 
         # "quero ver vídeos" — só o tipo, sem assunto: abre a listagem.
         if not tokens:
             if detected_type in VALID_TYPES:
                 log.info("comando de listagem detectado: tipo=%s (%s)", detected_type, type_hits)
-                return MatchResult(text or "", cleaned, detected_type, STATUS_OPEN_LIST, [])
-            return MatchResult(text or "", cleaned, detected_type, STATUS_NOT_FOUND, [])
+                return MatchResult(
+                    text or "", cleaned, detected_type, STATUS_OPEN_LIST, [], type_strength
+                )
+            return MatchResult(text or "", cleaned, detected_type, STATUS_NOT_FOUND, [], type_strength)
 
         candidates = [self.score_resource(r, tokens, detected_type) for r in pool]
         candidates.sort(key=lambda c: c.score, reverse=True)
@@ -217,7 +250,7 @@ class ResourceMatcher:
                 )
             else:
                 log.info("nenhum recurso acima do limiar (melhor=%.1f)", best.score)
-            return MatchResult(text or "", cleaned, detected_type, status, candidates)
+            return MatchResult(text or "", cleaned, detected_type, status, candidates, type_strength)
 
         if runner_up and runner_up.score >= self.threshold and (best.score - runner_up.score) < self.margin:
             ambiguous = [c for c in candidates if c.score >= self.threshold][: self.max_suggestions]
@@ -225,10 +258,55 @@ class ResourceMatcher:
                 "resultado ambíguo: %s",
                 ", ".join(f"{c.resource.id}={c.score:.1f}" for c in ambiguous),
             )
-            return MatchResult(text or "", cleaned, detected_type, STATUS_MULTIPLE, ambiguous)
+            return MatchResult(
+                text or "", cleaned, detected_type, STATUS_MULTIPLE, ambiguous, type_strength
+            )
 
         log.info(
             "recurso selecionado: %s (%s) score=%.1f tipo=%s",
             best.resource.id, best.resource.titulo, best.score, detected_type or "-",
         )
-        return MatchResult(text or "", cleaned, detected_type, STATUS_OPEN, candidates)
+        return MatchResult(
+            text or "", cleaned, detected_type, STATUS_OPEN, candidates, type_strength
+        )
+
+    #: Ordem de preferência quando as alternativas do reconhecedor divergem.
+    #: Abrir o conteúdo > abrir a listagem certa > pedir para escolher >
+    #: cair no menu genérico > não achar nada.
+    _STATUS_RANK = {
+        STATUS_OPEN: 5,
+        STATUS_OPEN_LIST: 4,
+        STATUS_MULTIPLE: 3,
+        STATUS_OPEN_MENU: 2,
+        STATUS_NOT_FOUND: 1,
+    }
+    _STRENGTH_RANK = {"strong": 2, "weak": 1, None: 0}
+
+    def search_best(
+        self, hypotheses: Sequence[str], resources: Optional[Sequence[Resource]] = None
+    ) -> MatchResult:
+        """Avalia várias transcrições (N-best do Vosk) e fica com a melhor.
+
+        O reconhecedor devolve alternativas ordenadas por confiança acústica,
+        mas a alternativa mais provável nem sempre é a que faz sentido para o
+        catálogo — aqui vence a que encontra conteúdo com mais confiança.
+        """
+        textos = [h for h in dict.fromkeys(hypotheses or []) if h and h.strip()]
+        if not textos:
+            return MatchResult("", "", None, STATUS_NOT_FOUND, [])
+
+        def chave(resultado: MatchResult):
+            return (
+                self._STATUS_RANK.get(resultado.status, 0),
+                self._STRENGTH_RANK.get(resultado.type_strength, 0),
+                resultado.confidence,
+            )
+
+        melhor = self.search(textos[0], resources)
+        for texto in textos[1:]:
+            atual = self.search(texto, resources)
+            chave_atual, chave_melhor = chave(atual), chave(melhor)
+            if chave_atual > chave_melhor:
+                log.info("alternativa preferida: %r (%s)", texto, atual.status)
+                melhor = atual
+        return melhor

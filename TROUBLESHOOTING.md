@@ -45,7 +45,18 @@ o ganho está baixo demais.
 
 ## 2. Raspberry sem áudio (o MP3 não toca)
 
-**Sintomas:** log `nenhum player de áudio encontrado` ou `falha ao reproduzir`.
+**Sintomas:** log `nenhum player de áudio encontrado`, `falha ao reproduzir` ou
+`<Nome> not found`.
+
+Teste os quatro avisos direto pela API:
+
+```bash
+for som in startup wakeword found error; do
+  curl -s -X POST localhost:5000/api/voice/sound -H 'Content-Type: application/json' \
+       -d "{\"name\":\"$som\"}"; sleep 3
+done
+curl -s localhost:5000/api/voice/status | python3 -m json.tool   # caminhos e "exists"
+```
 
 ```bash
 sudo apt install -y mpg123
@@ -57,11 +68,13 @@ aplay /usr/share/sounds/alsa/Front_Center.wav      # teste do ALSA
 |---|---|
 | Saída errada (HDMI × P2) | `sudo raspi-config` → System Options → Audio; ou clique com o botão direito no ícone de volume do desktop |
 | Volume no zero | `alsamixer` → F6 escolhe a placa → suba Master/PCM → `sudo alsactl store` |
-| Arquivo ausente | log `Welcome audio not found` — copie o MP3 para `static/assets/audio/oi_estou_ouvindo.mp3` |
+| Arquivo ausente | log `Startup/Wakeword/Found/Error not found` — confira `static/assets/audio/` e `voice.sounds` no config |
+| Aviso cortado pela metade | outro aviso o interrompeu (comportamento normal) ou `voice.audio_player_timeout_seconds` é curto demais |
+| O Zee reage à própria voz | aumente `voice.sound_tail_silence_seconds` (padrão 0,4 s) |
 | MP3 corrompido | `mpg123 -t arquivo.mp3` reporta o erro |
 | Serviço sem sessão de áudio | confirme `SupplementaryGroups=audio` em `/etc/systemd/system/zee-assistant.service` |
 
-O sistema **não trava** sem áudio: ele registra o erro e segue para a captura do comando.
+O sistema **não trava** sem áudio: registra o erro e segue o fluxo normalmente.
 
 ---
 
@@ -148,7 +161,80 @@ decisão:
 
 ---
 
-## 6. Comando reconhecido, mas o conteúdo não abre
+## 6. "O reconhecimento dos pedidos não está bom"
+
+Este é o roteiro completo de ajuste. **Diagnostique antes de mexer em limiar** —
+na maioria das vezes o problema não é o limiar, é uma palavra que o modelo não
+sabe escrever.
+
+### Passo 1 — separe "ouvir mal" de "buscar mal"
+
+```bash
+# o que o Vosk realmente transcreveu?
+grep "transcrição" logs/zee.log | tail -5
+```
+
+* A transcrição está **certa** e o conteúdo errado abriu → problema de **busca**
+  (passos 4 e 5).
+* A transcrição está **errada** → problema de **reconhecimento** (passos 2 e 3).
+
+Para reproduzir sem falar (macOS): `venv/bin/python scripts/dev_say_test.py`.
+
+### Passo 2 — a palavra existe no vocabulário do modelo?
+
+```bash
+venv/bin/python scripts/voice_test.py vocab
+```
+
+O modelo PT-BR pequeno **não conhece**: `podcast`, siglas soletradas (`ABC`,
+`IA`), nomes próprios incomuns e estrangeirismos. Ele sempre escreve algo
+parecido no lugar:
+
+| Você fala | O modelo escreve |
+|---|---|
+| podcast | `pode se`, `de pode`, `pode que se` |
+| ABC | `se` |
+| IA (soletrado) | `dia`, `quem diria` |
+| áudios | `deus`, `ao deus` |
+
+Nada de ajuste no limiar resolve isso — a palavra simplesmente não pode ser
+produzida. Use o passo 3.
+
+### Passo 3 — conserte a transcrição (`phonetic_aliases`)
+
+Em `config/config.json` → `matching.phonetic_aliases`, mapeie o que o modelo
+escreve para o que você quis dizer:
+
+```jsonc
+"phonetic_aliases": {
+  "pode se": "podcast",       // trocas com limite de palavra:
+  "de pode": "de podcast",    // "pode ser" continua intocado
+  "lista de deus": "lista de audios"
+}
+```
+
+Descubra os seus mapeamentos assim:
+
+```bash
+sudo systemctl stop zee-assistant
+venv/bin/python scripts/voice_test.py command    # fale e veja a transcrição
+```
+
+### Passo 4 — dê outros nomes ao conteúdo (`aliases`)
+
+Em `data/recursos.json`, cada recurso aceita apelidos que pontuam como o título:
+
+```json
+{
+  "id": "rec_004", "tipo": "jogo", "titulo": "Jogo do ABC",
+  "aliases": ["jogo do alfabeto", "jogo das letras", "abecedário"]
+}
+```
+
+**Regra de ouro:** títulos e apelidos com palavras inteiras e comuns
+("alfabeto", "inteligência artificial"), nunca siglas.
+
+### Passo 5 — ajuste a busca
 
 ```bash
 venv/bin/python scripts/voice_test.py match "quero assistir o vídeo de ia"
@@ -158,14 +244,37 @@ O ranking mostra o score de cada recurso.
 
 | Situação | Ajuste |
 |---|---|
-| O item certo ficou logo abaixo do limiar | baixe `matching.confidence_threshold` para 62–65 |
-| Abre o item errado com confiança alta | melhore os títulos no `recursos.json` (títulos distintos ajudam mais que qualquer ajuste) |
+| O item certo ficou logo abaixo do limiar | `matching.confidence_threshold` para 62–65 |
+| Abre o item errado com confiança alta | melhore os títulos (títulos distintos ajudam mais que qualquer parâmetro) |
 | Sempre pede para escolher entre duas opções | reduza `matching.ambiguity_margin` (ex.: 5) |
-| Siglas não são entendidas | **o modelo não transcreve siglas soletradas** ("ABC" vira `se`, "IA" vira `dia`): acrescente `aliases` ao recurso com palavras inteiras (`"jogo do alfabeto"`) |
-| Sinônimos de texto | `matching.synonyms` (ex.: `"pln": "processamento de linguagem natural"`) |
-| A transcrição sai truncada | aumente `voice.command.silence_duration_seconds` para 1.6 |
+| Pede a listagem quando queria um item | o assunto se perdeu na transcrição — veja os passos 3 e 4 |
+| Abre o tipo errado ("vídeo" em vez de "áudio") | use o substantivo ao falar ("podcast", "livro"); substantivos vencem verbos |
+| A transcrição sai truncada | `voice.command.silence_duration_seconds` para 1.6 |
+| Sinônimos de palavra única | `matching.synonyms` (ex.: `"pln": "processamento de linguagem natural"`) |
 
----
+### Passo 6 — mais alternativas do reconhecedor
+
+O sistema já avalia as 3 melhores transcrições e fica com a que faz sentido no
+catálogo. Em microfones ruins, subir ajuda (custa um pouco de CPU):
+
+```jsonc
+"voice": { "command": { "max_alternatives": 5 } }
+```
+
+### Passo 7 — o básico do áudio
+
+Reconhecimento ruim quase sempre tem causa física:
+
+* **fale a 30–50 cm** do microfone;
+* ganho de captura no `alsamixer` (F4) — o `rms` no `voice_test.py wakeword`
+  deve passar de 1000 quando você fala;
+* microfone USB longe da fonte e do Wi-Fi (ruído elétrico);
+* ambiente com eco piora muito o resultado.
+
+Se nada resolver, considere um modelo maior (`vosk-model-pt-fb-v0.1.1`,
+~1,6 GB) — cabe em um Pi 4B de 4 GB, mas o carregamento fica lento e a resposta
+sobe de ~0,5 s para vários segundos. Só vale a pena com um caso de uso que
+justifique.
 
 ## 7. Wi-Fi não conecta
 

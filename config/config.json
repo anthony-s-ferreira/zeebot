@@ -5,6 +5,7 @@
     "resources_file": "data/recursos.json",
     "auto_reload_resources": true,
     "error_auto_return_seconds": 5,
+    "answer_auto_return_seconds": 5,
     "version": "1.0.0"
   },
 
@@ -25,7 +26,13 @@
     "sample_rate": 16000,
     "block_size": 4000,
     "input_device": null,
-    "welcome_audio": "static/assets/audio/oi_estou_ouvindo.mp3",
+    "sounds": {
+      "startup": "static/assets/audio/saudacao.mp3",
+      "wakeword": "static/assets/audio/pode-falar.mp3",
+      "found": "static/assets/audio/encontrei.mp3",
+      "error": "static/assets/audio/erro.mp3"
+    },
+    "sound_tail_silence_seconds": 0.4,
     "audio_players": [
       ["mpg123", "-q"],
       ["afplay"],
@@ -38,7 +45,7 @@
     "wakeword": {
       "phrases": ["oi zee", "oi zi", "oi zí", "oi zé", "oi ze", "oi zii", "oizee", "oizi", "ei zee", "ei zi", "olá zee", "oi zey", "oi zin", "oi zeca"],
       "use_grammar": true,
-      "grammar_phrases": ["oi", "oi zé", "oi zi", "oi zeca", "oi zen", "ei zé", "ei zi", "olá zé", "alô zi", "opa zé"],
+      "grammar_phrases": ["oi zé", "oi zi", "ei zé", "ei zi", "olá zé", "alô zi", "opa zé"],
       "fuzzy_threshold": 82,
       "max_words": 4,
       "cooldown_seconds": 2.0,
@@ -57,11 +64,27 @@
     },
 
     "command": {
-      "max_record_seconds": 10,
-      "min_record_seconds": 0.8,
-      "no_speech_timeout_seconds": 5.0,
+      "max_record_seconds": 12,
+      "min_record_seconds": 1.2,
+      "no_speech_timeout_seconds": 10.0,
       "silence_rms_threshold": 350,
-      "silence_duration_seconds": 1.2
+      "silence_duration_seconds": 1.5,
+      "min_speech_blocks": 2,
+      "max_alternatives": 5,
+      "pre_capture_flush_blocks": 1,
+      "whisper": {
+        "enabled": true,
+        "binary": "tools/whisper.cpp/build/bin/whisper-cli",
+        "model_path": "models/whisper/ggml-base-q5_1.bin",
+        "language": "pt",
+        "threads": 3,
+        "timeout_seconds": 30,
+        "persistent": true,
+        "server_binary": "tools/whisper.cpp/build/bin/whisper-server",
+        "server_host": "127.0.0.1",
+        "server_port": 8178,
+        "server_startup_timeout_seconds": 30
+      }
     }
   },
 
@@ -75,9 +98,48 @@
     "type_penalty": 25,
     "synonyms": {
       "ia": "inteligencia artificial",
-      "i a": "inteligencia artificial",
       "abc": "abc"
+    },
+    "phonetic_aliases": {
+      "pode se": "podcast",
+      "pode que se": "podcast",
+      "pode ce": "podcast",
+      "pode si": "podcast",
+      "podi casti": "podcast",
+      "pod caster": "podcast",
+      "de pode": "de podcast",
+      "o pode": "o podcast",
+      "i a": "inteligencia artificial",
+      "y a": "inteligencia artificial",
+      "lista de deus": "lista de audios",
+      "lista de ao deus": "lista de audios",
+      "lista de alvos": "lista de audios",
+      "demais": "dez mais dez"
     }
+  },
+
+  "slm": {
+    "enabled": true,
+    "model_path": "models/slm/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+    "context_size": 512,
+    "max_tokens": 96,
+    "temperature": 0.2,
+    "threads": 3
+  },
+
+  "tts": {
+    "enabled": true,
+    "model_path": "models/piper/pt_BR-faber-medium.onnx",
+    "length_scale": 1.0,
+    "volume": 1.0,
+    "playback_timeout_seconds": 60
+  },
+
+  "warmup": {
+    "enabled": true,
+    "delay_seconds": 5,
+    "slm": true,
+    "tts": true
   },
 
   "network": {

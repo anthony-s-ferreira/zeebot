@@ -31,7 +31,12 @@ sys.path.insert(0, str(BASE_DIR))
 from app.config import Config  # noqa: E402
 from app.resources import ResourceLibrary  # noqa: E402
 from app.voice.matcher import ResourceMatcher  # noqa: E402
-from app.voice.recognizer import VoskEngine, result_text  # noqa: E402
+from app.voice.recognizer import (  # noqa: E402
+    CommandRecognizer,
+    VoskEngine,
+    result_hypotheses,
+    result_text,
+)
 from app.voice.wakeword import WakewordDetector  # noqa: E402
 
 #: Frases que DEVEM acionar / que NÃO podem acionar o assistente.
@@ -44,11 +49,27 @@ WAKEWORD_NOK = [
     "Vamos jogar agora",
     "Oi gente tudo bem",
 ]
+#: ``(frase, resultado esperado)`` — id do recurso, ``LISTA:tipo`` ou ``MENU``.
 COMANDOS = [
-    "quero assistir ao vídeo de introdução à inteligência artificial",
-    "quero ouvir o podcast de inteligência artificial",
-    "abra o livro fundamentos de inteligência artificial",
-    "quero jogar o jogo do ABC",
+    ("quero assistir ao vídeo de introdução à inteligência artificial", "rec_001"),
+    ("abre o vídeo de introdução à inteligência artificial", "rec_001"),
+    ("coloca a aula de inteligência artificial", "rec_001"),
+    ("quero ouvir o podcast de inteligência artificial", "rec_002"),
+    ("toca o podcast de inteligência artificial", "rec_002"),
+    ("bota o áudio de inteligência artificial", "rec_002"),
+    ("abra o livro fundamentos de inteligência artificial", "rec_003"),
+    ("quero ler fundamentos de inteligência artificial", "rec_003"),
+    ("abre o pdf de fundamentos", "rec_003"),
+    ("quero jogar o jogo do alfabeto", "rec_004"),
+    ("abre o jogo das letras", "rec_004"),
+    ("bora brincar com o alfabeto", "rec_004"),
+    ("lista de vídeos", "LISTA:video"),
+    ("mostra a lista de podcasts", "LISTA:audio"),
+    ("lista de livros", "LISTA:livro"),
+    ("lista de jogos", "LISTA:jogo"),
+    ("quais jogos existem", "LISTA:jogo"),
+    ("quero ver a lista de áudios", "LISTA:audio"),
+    ("abre o menu", "MENU"),
 ]
 
 
@@ -71,14 +92,28 @@ def falar(frase: str, destino: Path, voz: str, silencio_ms: int = 600) -> None:
 
 
 def transcrever(engine: VoskEngine, wav: Path, grammar: Optional[str]) -> str:
+    """Melhor transcrição do arquivo (usado no estágio da wakeword)."""
+    hipoteses = transcrever_alternativas(engine, wav, grammar, None)
+    return hipoteses[0] if hipoteses else ""
+
+
+def transcrever_alternativas(
+    engine: VoskEngine,
+    wav: Path,
+    grammar: Optional[str] = None,
+    captura: Optional[CommandRecognizer] = None,
+) -> List[str]:
+    """Todas as transcrições (N-best), como no estágio de comando."""
     recognizer = engine.create_recognizer(grammar)
+    if captura is not None:
+        captura.configure_recognizer(recognizer)
     with wave.open(str(wav), "rb") as arquivo:
         while True:
             dados = arquivo.readframes(4000)
             if not dados:
                 break
             recognizer.AcceptWaveform(dados)
-    return result_text(recognizer.FinalResult())
+    return result_hypotheses(recognizer.FinalResult())
 
 
 def main() -> int:
@@ -143,22 +178,38 @@ def main() -> int:
         for frase in WAKEWORD_NOK:
             testar_wakeword(frase, False)
 
-    print("\nCOMANDOS — transcrição + busca")
-    for frase in args.comando or COMANDOS:
+    captura = CommandRecognizer(config.section("voice").get("command", {}))
+    comandos = [(frase, None) for frase in args.comando] or COMANDOS
+    acertos = 0
+    print("\nCOMANDOS — transcrição (N-best) + busca")
+    print(f"  {'falado':46} {'transcrito':40} resultado")
+    print("  " + "-" * 108)
+    for frase, esperado in comandos:
         falar(frase, wav, args.voz)
-        texto = transcrever(engine, wav, None)
-        resultado = matcher.search(texto)
-        alvo = resultado.best.resource.id if resultado.best else "-"
-        titulo = resultado.best.resource.titulo if resultado.best else "-"
-        print(f"  falado      : {frase!r}")
-        print(f"  transcrito  : {texto!r}")
-        print(
-            f"  resultado   : {resultado.status} conf={resultado.confidence} "
-            f"tipo={resultado.detected_type} -> {alvo} ({titulo})\n"
-        )
+        hipoteses = transcrever_alternativas(engine, wav, None, captura)
+        resultado = matcher.search_best(hipoteses)
+        obtido = {
+            "open_list": f"LISTA:{resultado.detected_type}",
+            "open_menu": "MENU",
+        }.get(resultado.status)
+        if obtido is None:
+            obtido = resultado.best.resource.id if resultado.best else resultado.status
+        transcrito = hipoteses[0] if hipoteses else ""
+        if esperado is None:
+            marca = " "
+        else:
+            ok = obtido == esperado
+            acertos += ok
+            falhas += 0 if ok else 1
+            marca = "OK " if ok else f"ERRO (esperado {esperado})"
+        print(f"  {frase[:44]:46} {transcrito[:38]!r:40} {obtido:12} {marca}")
+
+    total = sum(1 for _, esperado in comandos if esperado is not None)
+    if total:
+        print(f"\n  comandos corretos: {acertos}/{total}")
 
     shutil.rmtree(tmp, ignore_errors=True)
-    print(f"Falhas de wakeword: {falhas}\n")
+    print(f"\nFalhas totais: {falhas}\n")
     return 1 if falhas else 0
 
 
