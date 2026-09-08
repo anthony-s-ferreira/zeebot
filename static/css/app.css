@@ -382,6 +382,7 @@ body[data-state="PROCESSING_COMMAND"] .mic-wave span { animation: bars 1.6s ease
 .menu-card--audio { color: var(--audio); background: rgba(70, 213, 192, .14); }
 .menu-card--livro { color: var(--livro); background: rgba(122, 168, 255, .14); }
 .menu-card--jogo  { color: var(--jogo);  background: rgba(200, 135, 255, .14); }
+.menu-card--wifi  { color: var(--mel-300); background: rgba(255, 192, 33, .16); }
 .menu-card__label, .menu-card__count { color: var(--paper); }
 
 /* -------------------------------------------------------------- LISTAGEM */

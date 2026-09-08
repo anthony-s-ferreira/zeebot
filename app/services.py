@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from .audio import AudioPlayer, SoundBoard
 from .config import Config
 from .events import EventBus
+from .llm import RemoteLLM
 from .network.manager import NetworkSupervisor
 from .resources import ResourceLibrary
 from .slm import LocalSLM
@@ -34,6 +35,7 @@ class ZeeServices:
             resources_path, bool(self.config.get("app.auto_reload_resources", True))
         )
         self.matcher = ResourceMatcher(self.library, self.config.section("matching"))
+        self.llm = RemoteLLM(self.config.section("llm"))
         self.slm = LocalSLM(self.config.section("slm"))
         voice_cfg = self.config.section("voice")
         self.player = AudioPlayer(
@@ -61,6 +63,7 @@ class ZeeServices:
             self.slm,
             self.tts,
             startup_ready=self._startup_sound_played,
+            llm=self.llm,
         )
         self.network = NetworkSupervisor(self.config, self.state)
         self._started = threading.Event()
@@ -201,6 +204,13 @@ class ZeeServices:
                 "enabled": self.slm.enabled,
                 "model_path": str(self.slm.model_path),
                 "loaded": self.slm._model is not None,
+            },
+            "llm": {
+                "enabled": self.llm.enabled,
+                "provider": self.llm.provider,
+                "url": self.llm.url,
+                "model": self.llm.model,
+                "last_error": self.llm.last_error,
             },
             "tts": self.tts.status(),
         }

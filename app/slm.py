@@ -22,11 +22,12 @@ class LocalSLM:
         config = config or {}
         self.enabled = bool(config.get("enabled", True))
         self.model_path = Path(config.get("model_path", "models/slm/model.gguf"))
-        self.n_ctx = int(config.get("context_size", 512))
-        self.max_tokens = max(8, int(config.get("max_tokens", 48)))
-        self.max_words = max(5, int(config.get("max_words", 24)))
+        self.n_ctx = max(128, int(config.get("context_size", 256)))
+        self.max_tokens = max(8, int(config.get("max_tokens", 24)))
+        self.max_words = max(5, int(config.get("max_words", 16)))
         self.temperature = float(config.get("temperature", 0.2))
-        self.threads = int(config.get("threads", 3))
+        self.threads = max(1, int(config.get("threads", 2)))
+        self.n_batch = max(32, int(config.get("n_batch", 32)))
         self._model = None
         self._load_lock = threading.Lock()
         self.last_error: Optional[str] = None
@@ -53,8 +54,10 @@ class LocalSLM:
             self._model = Llama(
                 model_path=str(self.model_path),
                 n_ctx=self.n_ctx,
+                n_batch=self.n_batch,
                 n_threads=self.threads,
                 verbose=False,
+                use_mlock=True,
             )
             self.last_error = None
         return self._model
@@ -80,7 +83,8 @@ class LocalSLM:
                         f"Responda diretamente em uma unica frase, com no maximo "
                         f"{self.max_words} palavras, de forma clara e adequada para criancas. "
                         "Nao use introducoes como 'A resposta e', pois a voz acrescentara isso. "
-                        "Nao invente recursos do catalogo nem diga que pode abrir sites."
+                        "Nao invente recursos do catalogo nem diga que pode abrir sites. "
+                        "Nao repita a pergunta."
                     ),
                 },
                 {"role": "user", "content": question.strip()},
@@ -88,6 +92,7 @@ class LocalSLM:
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             stop=["<|im_end|>", "<|eot_id|>"],
+            stream=False,
         )
         text = str(result["choices"][0]["message"].get("content", "")).strip()
         if not text:

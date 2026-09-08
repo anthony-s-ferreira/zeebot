@@ -129,7 +129,7 @@ class CaptivePortal:
                 self._server = make_server("0.0.0.0", port, self.app, threaded=True)
                 self.active_port = port
                 break
-            except OSError as exc:
+            except Exception as exc:
                 last_error = exc
                 log.warning("porta %s indisponível para o captive portal (%s)", port, exc)
         else:

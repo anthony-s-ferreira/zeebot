@@ -37,6 +37,7 @@ from .recognizer import (
     result_text,
 )
 from .wakeword import WakewordDetector
+from ..llm import LLMUnavailable
 from ..slm import SLMUnavailable
 from ..utils.text import normalize
 
@@ -59,11 +60,13 @@ class VoiceEngine:
         slm=None,
         tts=None,
         startup_ready: Optional[threading.Event] = None,
+        llm=None,
     ) -> None:
         self.config = config
         self.state = state
         self.matcher = matcher
         self.slm = slm
+        self.llm = llm
         self.tts = tts
         self.startup_ready = startup_ready or threading.Event()
         if startup_ready is None:
@@ -456,7 +459,7 @@ class VoiceEngine:
             if corrected != normalize(text):
                 prompt = corrected
                 log.info("correção fonética: %r -> %r", text, prompt)
-            answer = self.slm.answer(prompt)
+            answer = self._answer_with_remote_or_local(prompt)
         except SLMUnavailable as exc:
             log.warning("SLM indisponível; mantendo fallback de conteúdo: %s", exc)
             self._finish_not_found(
@@ -475,6 +478,18 @@ class VoiceEngine:
             daemon=True,
             name="zee-resposta-retorno",
         ).start()
+
+    def _answer_with_remote_or_local(self, prompt: str) -> str:
+        if self.llm is not None:
+            try:
+                answer = self.llm.answer(prompt)
+                log.info("resposta obtida pela API LLM")
+                return answer
+            except LLMUnavailable as exc:
+                log.warning("API LLM indisponível; usando SLM local: %s", exc)
+        if self.slm is None:
+            raise SLMUnavailable("SLM local não configurado")
+        return self.slm.answer(prompt)
 
     def _speak_answer_and_return(self, answer: str) -> None:
         """Lê a resposta com Piper e mantém o texto visível durante a fala."""

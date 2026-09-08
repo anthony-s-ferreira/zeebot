@@ -72,6 +72,10 @@ class PiperTTS:
         if not clean_text:
             return False
         with self._speak_lock:
+            if not self.player.available:
+                self.last_error = "player de áudio indisponível para TTS"
+                log.warning("Piper TTS não conseguiu reproduzir: %s", self.last_error)
+                return False
             if self.state is not None:
                 self.state.set_audio_playing(True)
             try:

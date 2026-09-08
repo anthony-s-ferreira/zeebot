@@ -74,6 +74,7 @@
     sse: null,
     sseRetry: 0,
     pollTimer: null,
+    wifiPollTimer: null,
     micActivityTimer: null,
   };
 
@@ -123,6 +124,18 @@
     }
   }
 
+  async function startWifiSetup() {
+    try {
+      await api('/api/wifi/setup', { method: 'POST', body: { action: 'start' } });
+    } catch (error) {
+      showOverlay(
+        error.message || 'Não consegui iniciar a configuração do Wi-Fi. Verifique o adaptador e o NetworkManager.',
+        '⚠️',
+        7000
+      );
+    }
+  }
+
   /* ------------------------------------------------------------- roteador */
   function applyBackendState(snapshot) {
     if (!snapshot) return;
@@ -139,6 +152,7 @@
       case 'WIFI_SETUP':
         teardownResource();
         showView('wifi');
+        startWifiStatusPolling();
         break;
       case 'MENU':
         teardownResource();
@@ -154,6 +168,7 @@
       case 'BOOTING':
         break;
       default: // HOME_LISTENING, WAKEWORD_DETECTED, WAITING_USER, PROCESSING_COMMAND, ERROR
+        stopWifiStatusPolling();
         teardownResource();
         showView('home');
         break;
@@ -635,9 +650,11 @@
     }
 
     const status = info.status || 'idle';
-    const classes = { connecting: 'is-busy', connected: 'is-ok', failed: 'is-error', ap_failed: 'is-error' };
+    const classes = { starting: 'is-busy', connecting: 'is-busy', connected: 'is-ok', failed: 'is-error', ap_failed: 'is-error' };
     el.wifiStatus.className = `wifi-status ${classes[status] || ''}`.trim();
-    if (status === 'connecting') {
+    if (status === 'starting') {
+      el.wifiStatus.textContent = 'Iniciando a rede de configuração...';
+    } else if (status === 'connecting') {
       el.wifiStatus.textContent = `Conectando a ${info.ssid || 'rede'}...`;
     } else if (status === 'connected') {
       el.wifiStatus.textContent = 'Conectado!';
@@ -647,6 +664,25 @@
       el.wifiStatus.textContent = 'Não consegui criar a rede de configuração. Verifique o Wi-Fi do Raspberry Pi.';
     } else {
       el.wifiStatus.textContent = '';
+    }
+  }
+
+  function startWifiStatusPolling() {
+    if (store.wifiPollTimer) return;
+    const poll = async () => {
+      try {
+        const result = await api('/api/wifi/status');
+        applyWifiInfo(result.setup);
+      } catch (_) { /* a troca de rede pode interromper uma consulta */ }
+    };
+    poll();
+    store.wifiPollTimer = window.setInterval(poll, 2000);
+  }
+
+  function stopWifiStatusPolling() {
+    if (store.wifiPollTimer) {
+      clearInterval(store.wifiPollTimer);
+      store.wifiPollTimer = null;
     }
   }
 
@@ -777,6 +813,10 @@
 
     document.querySelectorAll('.menu-card').forEach((card) => {
       card.addEventListener('click', () => {
+        if (card.id === 'btn-wifi-setup') {
+          startWifiSetup();
+          return;
+        }
         invalidateResources();
         navigate('list', { tipo: card.dataset.tipo });
       });

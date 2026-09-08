@@ -217,6 +217,26 @@ class TestVoz:
         assert app.zee_services.state.state.value == antes
 
 
+class TestWifiSetup:
+    def test_falha_ao_iniciar_ap_retorna_erro_real(self, app, client):
+        app.zee_services.network.start_setup_mode = lambda: True
+        app.zee_services.network.setup_info = lambda: {
+            "status": "starting",
+            "message": "Iniciando a rede de configuração...",
+        }
+
+        response = client.post("/api/wifi/setup", json={"action": "start"})
+
+        assert response.status_code == 202
+        assert response.get_json() == {
+            "ok": True,
+            "setup": {
+                "status": "starting",
+                "message": "Iniciando a rede de configuração...",
+            },
+        }
+
+
 class TestSons:
     def test_motor_nao_escuta_antes_da_saudacao(self, app):
         voice = app.zee_services.voice

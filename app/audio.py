@@ -111,9 +111,16 @@ class AudioPlayer:
         self._process_lock = threading.Lock()
         self._process: Optional[subprocess.Popen] = None
         self.command: Optional[List[str]] = None
+        self.wav_command: Optional[List[str]] = None
         for candidate in players or []:
             if candidate and which(str(candidate[0])):
                 self.command = [str(part) for part in candidate]
+                break
+        # mpg123 is suitable for the alert MP3s, but Piper produces PCM WAV.
+        # Prefer ALSA's native WAV player for those files.
+        for candidate in (("aplay", "-q"), ("paplay",)):
+            if which(candidate[0]):
+                self.wav_command = list(candidate)
                 break
         if self.command:
             log.info("player de áudio: %s", " ".join(self.command))
@@ -151,10 +158,15 @@ class AudioPlayer:
         if preempt:
             self.stop()
 
+        command = self.wav_command if path.suffix.lower() == ".wav" else self.command
+        if command is None:
+            log.warning("áudio %s não reproduzido: player WAV indisponível", path.name)
+            return False
+
         with self._lock:
             try:
                 process = subprocess.Popen(  # noqa: S603 - lista de argumentos, sem shell
-                    [*self.command, str(path)],
+                    [*command, str(path)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,

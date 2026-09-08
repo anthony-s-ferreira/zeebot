@@ -218,8 +218,9 @@ def create_app(services: ZeeServices, config: Optional[Config] = None) -> Flask:
         payload: Dict[str, Any] = request.get_json(silent=True) or {}
         action = str(payload.get("action", "")).lower()
         if action == "start":
-            ok = services.network.enter_setup_mode()
-            return jsonify({"ok": ok, "setup": services.network.setup_info()})
+            ok = services.network.start_setup_mode()
+            setup = services.network.setup_info()
+            return jsonify({"ok": ok, "setup": setup}), 202
         if action == "stop":
             services.network.exit_setup_mode()
             return jsonify({"ok": True, "setup": services.network.setup_info()})

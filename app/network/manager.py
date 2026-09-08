@@ -58,6 +58,7 @@ class NetworkSupervisor:
         self._thread: Optional[threading.Thread] = None
         self._setup_mode = False
         self._connect_thread: Optional[threading.Thread] = None
+        self._setup_thread: Optional[threading.Thread] = None
         self._status: Dict[str, Any] = {
             "status": "idle",
             "message": "",
@@ -141,7 +142,12 @@ class NetworkSupervisor:
 
         if self._setup_mode:
             with self._lock:
-                connecting = self._status.get("status") == "connecting"
+                setup_status = self._status.get("status")
+            # Durante a criação do AP a rede antiga ainda pode aparecer como
+            # ativa; não deixe o monitor desmontar o setup no meio do nmcli.
+            if setup_status in {"starting", "ap_failed"}:
+                return
+            connecting = setup_status == "connecting"
             if connected and not connecting:
                 log.info("conexão detectada durante o setup — encerrando modo de configuração")
                 self.exit_setup_mode()
@@ -170,6 +176,63 @@ class NetworkSupervisor:
         self.enter_setup_mode()
 
     # ------------------------------------------------------------- setup mode
+    def start_setup_mode(self) -> bool:
+        """Inicia o AP em segundo plano para não perder a requisição HTTP."""
+        with self._lock:
+            if self._setup_mode:
+                return True
+            self._setup_mode = True
+            self._status.update(
+                {"status": "starting", "message": "Iniciando a rede de configuração...", "ap_ssid": self.ap_ssid}
+            )
+            self._setup_thread = threading.Thread(
+                target=self._setup_worker,
+                name="zee-wifi-setup",
+                daemon=True,
+            )
+            thread = self._setup_thread
+        self.state.set_state(State.WIFI_SETUP, self.setup_info(), reason="iniciando configuração de Wi-Fi")
+        self.state.publish("wifi", self.setup_info())
+        thread.start()
+        return True
+
+    def _setup_worker(self) -> None:
+        """Cria o AP e o portal sem bloquear a chamada feita pela interface."""
+        try:
+            ok, message = wifi.start_access_point(
+                self.ap_ssid,
+                self.ap_password,
+                self.interface,
+                self.ap_connection,
+                self.ap_address,
+                self.ap_prefix_len,
+                self.use_sudo,
+            )
+            if not ok:
+                log.error("não foi possível criar o Access Point: %s", message)
+                with self._lock:
+                    self._status.update({"status": "ap_failed", "message": message})
+                self.state.publish("wifi", self.setup_info())
+                return
+
+            if not self.portal.start():
+                message = "Access Point criado, mas o portal de configuração não iniciou."
+                log.error(message)
+                wifi.stop_access_point(self.ap_connection, self.use_sudo)
+                with self._lock:
+                    self._status.update({"status": "ap_failed", "message": message})
+                self.state.publish("wifi", self.setup_info())
+                return
+
+            with self._lock:
+                self._status.update({"status": "idle", "message": "Rede de configuração pronta."})
+            self.state.publish("wifi", self.setup_info())
+        except Exception as exc:  # pragma: no cover - depende do NetworkManager/host
+            log.exception("erro inesperado ao iniciar o portal de Wi-Fi")
+            with self._lock:
+                self._status.update({"status": "ap_failed", "message": str(exc)})
+            self.state.publish("wifi", self.setup_info())
+
     def enter_setup_mode(self) -> bool:
         with self._lock:
             if self._setup_mode:
@@ -190,8 +253,18 @@ class NetworkSupervisor:
             log.error("não foi possível criar o Access Point: %s", message)
             with self._lock:
                 self._status.update({"status": "ap_failed", "message": message})
+            self._setup_mode = False
+            return False
 
-        self.portal.start()
+        if not self.portal.start():
+            message = "Access Point criado, mas o portal de configuração não iniciou."
+            log.error(message)
+            wifi.stop_access_point(self.ap_connection, self.use_sudo)
+            with self._lock:
+                self._status.update({"status": "ap_failed", "message": message})
+            self._setup_mode = False
+            return False
+
         self.state.set_state(State.WIFI_SETUP, self.setup_info(), reason="configuração de Wi-Fi")
         self.state.publish("wifi", self.setup_info())
         return ok
