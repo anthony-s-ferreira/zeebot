@@ -266,7 +266,7 @@ class TestSons:
     def test_lista_os_sons_no_status_da_voz(self, client):
         status = client.get("/api/voice/status").get_json()
         sons = status["sounds"]
-        assert set(sons) == {"startup", "wakeword", "found", "error"}
+        assert set(sons) == {"startup", "wakeword", "found", "thinking", "error"}
         assert "tts" in status
 
     def test_som_invalido(self, client):

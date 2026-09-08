@@ -346,6 +346,7 @@ class VoiceEngine:
                         self._command_recognizer_obj,
                         self._publish_microphone_activity,
                         self.command_transcriber if self.command_transcriber.available else None,
+                        self._on_command_processing,
                     )
                 except MicrophoneUnavailable as exc:
                     log.error("captura abortada: %s", exc)
@@ -386,6 +387,11 @@ class VoiceEngine:
             "microphone_activity",
             {"active": bool(active), "level": round(level, 2)},
         )
+
+    def _on_command_processing(self) -> None:
+        """Atualiza a tela e sinaliza enquanto o Whisper transcreve a fala."""
+        self.state.set_state(State.PROCESSING_COMMAND, reason="transcrevendo comando")
+        self.sounds.play("thinking", blocking=True)
 
     def handle_transcript(
         self, text: str, hypotheses: Optional[List[str]] = None

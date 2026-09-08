@@ -237,7 +237,7 @@ class SoundBoard:
     escutar a si mesmo pelo microfone.
     """
 
-    NAMES = ("startup", "wakeword", "found", "error")
+    NAMES = ("startup", "wakeword", "found", "thinking", "error")
 
     def __init__(
         self,

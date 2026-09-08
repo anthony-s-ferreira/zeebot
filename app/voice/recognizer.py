@@ -422,6 +422,7 @@ class CommandRecognizer:
         recognizer,
         activity_callback: Optional[Callable[[float, bool], None]] = None,
         transcriber: Optional[OfflineTranscriber] = None,
+        processing_callback: Optional[Callable[[], None]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """Captura um comando.
 
@@ -511,6 +512,8 @@ class CommandRecognizer:
         # fallback. Quando instalado, o Whisper é preferido para a frase livre.
         whisper_text = ""
         if transcriber is not None and speech_started:
+            if processing_callback is not None:
+                processing_callback()
             whisper_text = transcriber.transcribe(bytes(pcm), self.sample_rate)
             if whisper_text:
                 text = whisper_text
